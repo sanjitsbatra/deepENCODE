@@ -97,9 +97,10 @@ class BinnedHandler(Sequence):
 
 class BinnedHandlerImputing(BinnedHandler):
 
-    def __init__(self, data_len, seg_len):
+    def __init__(self, data_len, seg_len, CT_exchangeability=True):
         BinnedHandler.__init__(self, data_len, 1)
         self.seg_len = seg_len
+        self.CT_exchangeability = CT_exchangeability
         self.chrom_list, self.tot_len_list = zip(*self.chrom_lens.items())
         self.tot_len_list = np.array(self.tot_len_list, dtype=float)
         self.tot_len_list -= self.data_len // 2
@@ -132,7 +133,11 @@ class BinnedHandlerImputing(BinnedHandler):
                            data)
         batch = np.expand_dims(batch, axis=0)
         batch[np.isnan(batch)] = -1
-        return batch.transpose((0, 1, 3, 2))
+
+        if(self.CT_exchangeability):
+            return batch.transpose((0, 1, 3, 2))
+        else:
+            return batch.transpose((0, 2, 3, 1 ))
 
 
 class BinnedHandlerTraining(BinnedHandler):
@@ -141,11 +146,13 @@ class BinnedHandlerTraining(BinnedHandler):
                  network_width,
                  batch_size,
                  seg_len=None,
-                 drop_prob=0.5):
+                 drop_prob=0.5,
+                 CT_exchangeability=True):
         if seg_len is None:
             seg_len = network_width
         self.network_width = network_width
         self.drop_prob = drop_prob
+        self.CT_exchangeability = CT_exchangeability
         BinnedHandler.__init__(self, seg_len, batch_size)
         self.idx_map = np.random.permutation(self.tot_len_list[-1])
 
@@ -153,7 +160,8 @@ class BinnedHandlerTraining(BinnedHandler):
         batch = BinnedHandler.__getitem__(self, idx)  # already pre-processed
         return create_exchangeable_training_data(batch,
                                                  drop_prob=self.drop_prob,
-                                                 data_len=self.network_width)
+                                                 data_len=self.network_width,
+                                  CT_exchangeability=self.CT_exchangeability)
 
     def on_epoch_end(self):
         self.idx_map = np.random.permutation(self.tot_len_list[-1])
@@ -194,9 +202,10 @@ class BinnedHandlerSeqTraining(BinnedHandlerTraining, SeqHandler):
                  network_width,
                  batch_size,
                  seg_len=None,
-                 drop_prob=0.5):
+                 drop_prob=0.5,
+                 CT_exchangeability=True):
         BinnedHandlerTraining.__init__(
-            self, network_width, batch_size, seg_len, drop_prob)
+            self, network_width, batch_size, seg_len, drop_prob, CT_exchangeability)
         SeqHandler.__init__(self, self.data_len)
 
     def __getitem__(self, idx):
@@ -210,8 +219,8 @@ class BinnedHandlerSeqTraining(BinnedHandlerTraining, SeqHandler):
 class BinnedHandlerSeqImputing(BinnedHandlerImputing,
                                SeqHandler):
 
-    def __init__(self, data_len, seg_len):
-        BinnedHandlerImputing.__init__(self, data_len, seg_len)
+    def __init__(self, data_len, seg_len, CT_exchangeability=True):
+        BinnedHandlerImputing.__init__(self, data_len, seg_len, CT_exchangeability)
         SeqHandler.__init__(self, seg_len)
 
     def __getitem__(self, idx):
@@ -222,16 +231,16 @@ class BinnedHandlerSeqImputing(BinnedHandlerImputing,
         return to_return
 
 
-def create_exchangeable_training_data(batch, drop_prob, data_len=None):
+def create_exchangeable_training_data(batch, drop_prob, data_len=None, CT_exchangeability=True):
     x, y = zip(
-        *[create_exchangeable_training_obs(b, drop_prob, data_len)
+        *[create_exchangeable_training_obs(b, drop_prob, data_len, CT_exchangeability)
           for b in batch]
     )
     return np.array(x), np.array(y)
 
 
 # The input to this function is a single observation from the batch
-def create_exchangeable_training_obs(obs, drop_prob, data_len=None):
+def create_exchangeable_training_obs(obs, drop_prob, data_len=None, CT_exchangeability=True):
     if data_len is None:
         data_len = obs.shape[-1]
     input_tensor = np.copy(obs)
@@ -245,7 +254,7 @@ def create_exchangeable_training_obs(obs, drop_prob, data_len=None):
     # Randomly drop each of the NUM_CELL_TYPES x NUM_ASSAY_TYPES
     # experiments with probability drop_prob
     mask = np.random.uniform(size=(NUM_CELL_TYPES, NUM_ASSAY_TYPES))
-    mask = mask <= 0.5  # drop_prob
+    mask = mask <= drop_prob
     mask = np.tile(mask, [input_tensor.shape[-1], 1, 1])
     mask = mask.transpose((1, 2, 0))
     input_tensor[mask] = -1.0
@@ -255,6 +264,12 @@ def create_exchangeable_training_obs(obs, drop_prob, data_len=None):
     input_tensor[np.isnan(input_tensor)] = -1.0
     output[np.isnan(output)] = -1.0
 
-    # switch the m and l dimensions to obtain a (n x l x m) tensor
-    input_tensor = np.swapaxes(input_tensor, 1, 2)
+    if(CT_exchangeability):
+        # switch the m and l dimensions to obtain a (n x l x m) tensor
+        input_tensor = np.swapaxes(input_tensor, 1, 2)
+    else:
+        # If assay-type exchangeability, then obtain a (m x l x n) tensor instead
+        input_tensor = np.swapaxes(input_tensor, 1, 2)
+        input_tensor = np.swapaxes(input_tensor, 0, 2) 
+
     return input_tensor, output

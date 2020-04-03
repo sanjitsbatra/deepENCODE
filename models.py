@@ -9,7 +9,7 @@ from keras.models import Model
 from keras.layers import Concatenate, Lambda, Add
 from keras.losses import logcosh
 from keras import backend as K
-from data_loader import NUM_ASSAY_TYPES
+from data_loader import NUM_CELL_TYPES, NUM_ASSAY_TYPES
 
 
 def keras_nonneg_mean(input_x):
@@ -156,7 +156,8 @@ def create_exchangeable_seq_resnet(batches, width, height, depth,
                                    num_seq_features=65,
                                    seg_len=None,
                                    exch_func='nonneg_mean',
-                                   batchnorm=False):
+                                   batchnorm=False,
+                                   CT_exchangeability=True):
     if seg_len is None:
         seg_len = width
     input_shape = (batches, height*seg_len*depth + 25*4*seg_len)
@@ -178,7 +179,12 @@ def create_exchangeable_seq_resnet(batches, width, height, depth,
         # to matter, so we'll just collapse them via summation
         y = Lambda(lambda y: y[:, :, :, :x_depth] + y[:, :, :, x_depth:])(y)
         x = Add()([x, y])
-    x = Conv2D(NUM_ASSAY_TYPES,
+    if(CT_exchangeability):
+        x = Conv2D(NUM_ASSAY_TYPES,
+               (1, width),
+               padding='valid')(x)
+    else:
+        x = Conv2D(NUM_CELL_TYPES,
                (1, width),
                padding='valid')(x)
     print('shape of x after final convolution = ', x.shape)
@@ -198,7 +204,8 @@ def create_exchangeable_seq_cnn(batches, width, height, depth,
                                 seg_len=None,
                                 exch_func='max',
                                 batchnorm=False,
-                                density_network=False):
+                                density_network=False,
+                                CT_exchangeability=True):
     if seg_len is None:
         seg_len = width
     input_shape = (batches, height*seg_len*depth + 25*4*seg_len)
@@ -218,12 +225,22 @@ def create_exchangeable_seq_cnn(batches, width, height, depth,
         real_width = real_width - (patch_width - 1) * dilate
         print('shape of x after ', filter_params, ' exchangeable = ', x.shape)
 
-    x_mu = Conv2D(NUM_ASSAY_TYPES,
+    if(CT_exchangeability):
+        x_mu = Conv2D(NUM_ASSAY_TYPES,
+                  (1, real_width),
+                  padding='valid')(x)
+    else:
+        x_mu = Conv2D(NUM_CELL_TYPES,
                   (1, real_width),
                   padding='valid')(x)
     x_mu = Flatten()(x_mu)
     if density_network:
-        x_log_precision = Conv2D(NUM_ASSAY_TYPES,
+        if(CT_exchangeability):
+            x_log_precision = Conv2D(NUM_ASSAY_TYPES,
+                                 (1, real_width),
+                                 padding='valid')(x)
+        else:
+            x_log_precision = Conv2D(NUM_CELL_TYPES,
                                  (1, real_width),
                                  padding='valid')(x)
         x_log_precision = Flatten()(x_log_precision)
@@ -241,7 +258,8 @@ def create_exchangeable_cnn(batches, width, height, depth,
                             filters=((5, 2*NUM_ASSAY_TYPES, 1),
                                      (5, 3*NUM_ASSAY_TYPES, 1)),
                             seg_len=None,
-                            exch_func='max'):
+                            exch_func='max',
+                            CT_exchangeability=True):
     if seg_len is None:
         seg_len = width
 
@@ -264,10 +282,14 @@ def create_exchangeable_cnn(batches, width, height, depth,
         real_width = real_width - (patch_width - 1) * dilate
 
     # Now we add a dense layer
-    x = Conv2D(NUM_ASSAY_TYPES,
+    if(CT_exchangeability):
+        x = Conv2D(NUM_ASSAY_TYPES,
                (1, real_width),
                padding='valid')(x)
-
+    else:
+        x = Conv2D(NUM_CELL_TYPES,
+               (1, real_width),
+               padding='valid')(x)
     # We want B * n * m
     x = Flatten()(x)
 

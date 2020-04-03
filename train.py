@@ -35,13 +35,16 @@ if __name__ == '__main__':
     drop_probability = float(sys.argv[5])
 
     num_seq_filters = int(sys.argv[6])
-
+    CT_exchangeability = False # True is what we used for EIC19
+ 
     # This keeps obtaining a random batch of data
     # bwh = BinnedHandlerTraining(window_size, batch_size)
     bwh = BinnedHandlerSeqTraining(window_size,
                                    batch_size,
                                    seg_len=seg_len,
-                                   drop_prob=drop_probability)
+                                   drop_prob=drop_probability,
+                                   CT_exchangeability=CT_exchangeability)
+
     print(len(bwh))
 
     # Check to make sure this wasn't accidentally True
@@ -55,7 +58,8 @@ if __name__ == '__main__':
     feature_filters_input = [[4, num_filters, 1]]*num_conv
     seq_filters_input = [[4, num_filters, 1]]*num_seq_conv
 
-    model = create_exchangeable_seq_cnn(
+    if(CT_exchangeability):
+        model = create_exchangeable_seq_cnn(
         batch_size,
         window_size,
         NUM_CELL_TYPES,
@@ -66,8 +70,23 @@ if __name__ == '__main__':
         seg_len=seg_len,
         exch_func='max',
         batchnorm=True,
-        density_network=density_network
-    )
+        density_network=density_network,
+	CT_exchangeability=CT_exchangeability)
+    else:
+        model = create_exchangeable_seq_cnn(
+        batch_size,
+        window_size,
+        NUM_ASSAY_TYPES,
+        NUM_CELL_TYPES,
+        feature_filters=feature_filters_input,
+        seq_filters=seq_filters_input,
+        num_seq_features=num_seq_filters,
+        seg_len=seg_len,
+        exch_func='max',
+        batchnorm=True,
+        density_network=density_network,
+	CT_exchangeability=CT_exchangeability)
+        
 
     opt = Adam(lr=1e-3)
     if density_network:
