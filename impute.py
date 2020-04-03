@@ -16,7 +16,11 @@ FPATH = sys.argv[1]
 def print_arrays(imputed, validation_indices, chrom):
     for k, idx in enumerate(validation_indices):
         i, j = idx
-        fname = 'C{:02}M{:02}.chr{}'.format(i + 1, j + 1, chrom)
+
+	# This is being changed because I have changed the cell type + 1 in 
+	# the data loader 2 April 2020
+        fname = 'C{:02}M{:02}.chr{}'.format(i, j, chrom) 
+
         outfile = join(FPATH, fname)
         np.save(outfile, np.maximum(imputed[k, :], 0.))
 
@@ -76,13 +80,18 @@ if __name__ == '__main__':
 
     batch_size = int(in_shape[0])
 
-    # This now needs to be changed to blind indices
     fname = ('/scratch/sanjit/ENCODE_Imputation_Challenge'
-             '/Smaller_Data/ENCODE_NN'
-             '/blind_indices.txt')
+             '/2_April_2020/Data/Test.Indices.txt')
+    
+    f_fname = open(fname, 'r')    
 
-
-    validation_indices = np.loadtxt(fname).astype(int)
+    # Store the indices in a 2D numpy array
+    validation_indices = []    
+    for line in f_fname:
+        cell_t = int(line[1:2+1])
+        assay_t = int(line[4:5+1])
+        validation_indices.append([cell_t, assay_t])	
+    validation_indices = np.asarray(validation_indices)
 
     # decode each chromosome and save the output as npy binary file
     bwh = BinnedHandlerSeqImputing(window_size, seg_len)

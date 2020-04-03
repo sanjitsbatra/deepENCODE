@@ -15,7 +15,7 @@ NUM_CPU_THREADS = 5
 def lr_scheduler(epoch):
     if epoch < 3:
         return 2e-3
-    elif epoch < 15:
+    elif epoch < 100:
         return 1e-3
     else:
         return 1e-5
@@ -25,8 +25,8 @@ if __name__ == '__main__':
     batch_size = 4
     window_size = 100
     seg_len = 1000
-    steps_per_epoch = 1000  # int(3.5e9/batch_size/(seg_len-window_size+1)/25.)
-    epochs = 1000     # number of passes over the whole genome-ish
+    steps_per_epoch = 100  # int(3.5e9/batch_size/(seg_len-window_size+1)/25.)
+    epochs = 10     # number of passes over the whole genome-ish
 
     num_conv = int(sys.argv[2])
     num_seq_conv = int(sys.argv[3])

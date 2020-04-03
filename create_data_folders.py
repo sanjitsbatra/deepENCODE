@@ -17,16 +17,24 @@ for (dirpath, dirnames, filenames) in os.walk(data_path):
     break
 
 
+# Read in the names of the experiments to be used as Train or Test data
+current_data = []
+f_current = open(sys.argv[1], 'r')
+for line in f_current:
+	vec = line.rstrip('\n')
+	current_data.append(vec)
+
+
 # Read in the names of the experiments to be used as the Test data
 test_data = []
-f_test = open(sys.argv[1], 'r')
+f_test = open(sys.argv[2], 'r')
 for line in f_test:
 	vec = line.rstrip('\n')
 	test_data.append(vec)
 
 
 # Specify which chromosomes we will be training and testing on
-chroms = ['chr2', 'chr5', 'chr14', 'chr21']
+chroms = ['chr21'] # , 'chr5', 'chr14', 'chr2']
 
 
 # First we create the Training and Testing directories
@@ -36,11 +44,11 @@ subprocess.Popen(("mkdir -p Testing_Data").split(), stdout=subprocess.PIPE).comm
 
 # Then we populate these directories with soft-links
 for file_name in all_data:
-	f = file_name.split(".")[0]
+	experiment = file_name.split(".")[0]
 	chrom = file_name.split(".")[1] 
-	if(chrom not in chroms):
+	if( (chrom not in chroms) or (experiment not in current_data) ):
 		continue
-	if(f in test_data):
+	if(experiment in test_data):
 		subprocess.Popen(("ln -s "+data_path+file_name+" Testing_Data/"+file_name).split(), stdout=subprocess.PIPE).communicate()
 	else:				
 		subprocess.Popen(("ln -s "+data_path+file_name+" Training_Data/"+file_name).split(), stdout=subprocess.PIPE).communicate()

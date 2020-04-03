@@ -10,9 +10,10 @@ from keras.utils import Sequence
 # from multiprocessing import Pool
 
 
-SEQ_DIR = '/scratch/sanjit/ENCODE_Imputation_Challenge/genome/'
-BINNED_DATA_DIR = ('/scratch/sanjit/ENCODE_Imputation_Challenge/Binned_25bp_Training_Data/')
-                   #'Smaller_Data/chr7_Training/')
+SEQ_DIR = '/scratch/sanjit/ENCODE_Imputation_Challenge/2_April_2020/Data/genome'
+BINNED_DATA_DIR = ('/scratch/sanjit/ENCODE_Imputation_Challenge/2_April_2020'
+		   '/Data/Training_Data')
+
 # VALIDATION_BINNED_DATA_DIR = ('/scratch/sanjit/ENCODE_Imputation_Challenge'
 #                              '/Smaller_Data/chr7_Validation/')
 
@@ -37,18 +38,19 @@ class BinnedHandler(Sequence):
         self.data = {}
         self.chrom_lens = {}
         self.indices = {}
-        for cell_type in range(NUM_CELL_TYPES):
-            for assay_type in range(NUM_ASSAY_TYPES):
+        for cell_type in range(1, NUM_CELL_TYPES + 1):
+            for assay_type in range(1, NUM_ASSAY_TYPES + 1):
                 for chrom in [str(k) for k in range(1, 23)] + ['X']:
-                    fname = 'C{:02}M{:02}.chr{}.npy'.format(cell_type + 1,
-                                                            assay_type + 1,
+                    fname = 'C{:02}M{:02}.chr{}.npy'.format(cell_type,
+                                                            assay_type,
                                                             chrom)
                     fname = join(BINNED_DATA_DIR, fname)
                     if isfile(fname):
                         if chrom == '1':
                             print('Loading',
                                   fname.split('/')[-1].split('.')[0])
-                        this_array = np.log1p( np.load(fname) )
+			# Caution: We are working with log10(-log10 p-values ?)
+                        this_array = np.log1p( np.load(fname) ) 
                         # np.log1p(np.load(fname))
                         if chrom not in self.data:
                             self.data[chrom] = {}

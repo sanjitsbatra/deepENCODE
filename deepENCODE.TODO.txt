@@ -1,0 +1,9 @@
+deepENCODE TODO: 2 April 2020 
+
+2) Implement cell-type exchangeability.
+
+3) Add RC layers to the sequence.
+
+4) Add residual connections to the architecture.
+
+5) Train 10 models for each cell-type and assay-type exchangeability and benchmark their ensemble combinations.

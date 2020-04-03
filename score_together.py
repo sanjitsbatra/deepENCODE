@@ -61,17 +61,17 @@ def load_data(data_dir):
     for cell_type in range(NUM_CELL_TYPES):
         for assay_type in range(NUM_ASSAY_TYPES):
             for chrom in [str(k) for k in range(1, 23)] + ['X']:
-                fname = 'C{:02}M{:02}.chr{}.npy'.format(cell_type + 1,
-                                                        assay_type + 1,
+                fname = 'C{:02}M{:02}.chr{}.npy'.format(cell_type,
+                                                        assay_type,
                                                         chrom)
                 fname = join(data_dir, fname)
                 if isfile(fname):
-                    if ( (chrom == '7') or (chrom == '4') ):
+                    if (True): # (chrom == '7') or (chrom == '4') ):
                         tracks.append((cell_type, assay_type))
                         print('Loading', fname)
                     this_array = np.load(fname)
                     if (cell_type, assay_type) not in data:
-                        # TODO: If this isnt't numpy but list then mem is high!
+                        # TODO: If this isnt't numpy but list, then mem is high!
                         data[(cell_type, assay_type)] = []
                     data[(cell_type, assay_type)].append(
                         this_array
@@ -91,6 +91,7 @@ method_data = load_data(sys.argv[2])
 print("Finished loading data")
 Final_Result = []
 
+# Reflect the cell type + 1 change into here as well
 for track in tracks:
     track_name = 'C{:02}M{:02}'.format(track[0]+0, track[1]+0) # Sanjit made this change on 9 August 2019
     print("Computing metrics for "+str(track_name))
