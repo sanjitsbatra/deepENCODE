@@ -35,7 +35,7 @@ if __name__ == '__main__':
     drop_probability = float(sys.argv[5])
 
     num_seq_filters = int(sys.argv[6])
-    CT_exchangeability = False # True is what we used for EIC19
+    CT_exchangeability = int(sys.argv[7]) > 0 # True is what we used for EIC19
  
     # This keeps obtaining a random batch of data
     # bwh = BinnedHandlerTraining(window_size, batch_size)
