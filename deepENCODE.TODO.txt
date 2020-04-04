@@ -1,9 +1,14 @@
 deepENCODE TODO: 2 April 2020 
 
-2) Implement cell-type exchangeability.
+1) Add RC layers to the sequence.
 
-3) Add RC layers to the sequence.
+2) Add residual connections and dilated convolutions to the architecture.
+Systematically study the parameters' effect on performance.
 
-4) Add residual connections to the architecture.
+3) Train 10 models for each cell-type and assay-type exchangeability and benchmark their ensemble combinations.
 
-5) Train 10 models for each cell-type and assay-type exchangeability and benchmark their ensemble combinations.
+4) Create a scheme to convert the p-values into classification bins and optimize over those
+
+5) Design specific Test datasets for probing each combinatorial hypotheses.
+
+6) Implement ISE using an ensemble of trained networks as an in-silico oracle.
