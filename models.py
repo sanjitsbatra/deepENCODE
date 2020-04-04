@@ -10,7 +10,7 @@ from keras.layers import Concatenate, Lambda, Add
 from keras.losses import logcosh
 from keras import backend as K
 from data_loader import NUM_CELL_TYPES, NUM_ASSAY_TYPES
-
+import keras_genomics
 
 def keras_nonneg_mean(input_x):
     num_nonneg = K.tf.math.reduce_sum(
@@ -117,21 +117,25 @@ def seq_module(batches, width, height, depth,
 
     for filt in seq_filters:
         patch_width, patch_depth, dilate = filt
-        seq = Conv1D(patch_depth,
+        #seq = Conv1D(patch_depth,
+        seq = keras_genomics.layers.RevCompConv1D(patch_depth,
                      patch_width,
                      dilation_rate=dilate,
                      padding='same')(seq)
         if batchnorm:
-            seq = BatchNormalization()(seq)
+            # seq = BatchNormalization()(seq)
+            seq = keras_genomics.layers.normalization.RevCompConv1DBatchNorm()(seq)
         seq = Activation('relu')(seq)
         print('shape of seq after convolution ', filt, ' = ', seq.shape)
 
-    seq = Conv1D(num_seq_features,
+    # seq = Conv1D(num_seq_features,
+    seq = keras_genomics.layers.RevCompConv1D(num_seq_features,
                  25,
                  strides=25,
                  padding='valid')(seq)
     if batchnorm:
-        seq = BatchNormalization()(seq)
+        # seq = BatchNormalization()(seq)
+        seq = keras_genomics.layers.normalization.RevCompConv1DBatchNorm()(seq)
     seq = Activation('relu')(seq)
     print('shape of seq after final 1D conv = ', seq.shape)
 

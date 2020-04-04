@@ -8,7 +8,7 @@ from models import customLoss, maximum_likelihood_loss
 from numba import njit
 from keras.models import load_model
 import sys
-
+import keras_genomics
 
 FPATH = sys.argv[1]
 
@@ -81,7 +81,9 @@ if __name__ == '__main__':
 
     # maximum_likelihood_loss(y_true, y_pred, num_output)    
     trained_model = load_model(sys.argv[2],
-                                custom_objects={'customLoss': customLoss})
+                                custom_objects={'customLoss': customLoss,
+                    'RevCompConv1D': keras_genomics.layers.RevCompConv1D,
+                    'RevCompConv1DBatchNorm': keras_genomics.layers.normalization.RevCompConv1DBatchNorm})
 
     CT_exchangeability = int(sys.argv[3]) > 0
 
