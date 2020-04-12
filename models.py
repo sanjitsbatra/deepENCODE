@@ -2,15 +2,18 @@ from __future__ import print_function
 from __future__ import division
 from keras.layers.normalization import BatchNormalization
 from keras.layers import Activation
-from keras.layers.convolutional import Conv1D, Conv2D
+# from keras.layers.convolutional import Conv1D
+from keras.layers.convolutional import Conv2D
 from keras.layers import Flatten
 from keras.layers import Input
 from keras.models import Model
 from keras.layers import Concatenate, Lambda, Add
-from keras.losses import logcosh
+# from keras.losses import logcosh
 from keras import backend as K
 from data_loader import NUM_CELL_TYPES, NUM_ASSAY_TYPES
-import keras_genomics
+from keras_genomics.layers.normalization import RevCompConv1DBatchNorm
+from keras_genomics.layers import RevCompConv1D
+
 
 def keras_nonneg_mean(input_x):
     num_nonneg = K.tf.math.reduce_sum(
@@ -117,25 +120,25 @@ def seq_module(batches, width, height, depth,
 
     for filt in seq_filters:
         patch_width, patch_depth, dilate = filt
-        #seq = Conv1D(patch_depth,
-        seq = keras_genomics.layers.RevCompConv1D(patch_depth,
-                     patch_width,
-                     dilation_rate=dilate,
-                     padding='same')(seq)
+        # seq = Conv1D(patch_depth,
+        seq = RevCompConv1D(patch_depth,
+                            patch_width,
+                            dilation_rate=dilate,
+                            padding='same')(seq)
         if batchnorm:
             # seq = BatchNormalization()(seq)
-            seq = keras_genomics.layers.normalization.RevCompConv1DBatchNorm()(seq)
+            seq = RevCompConv1DBatchNorm()(seq)
         seq = Activation('relu')(seq)
         print('shape of seq after convolution ', filt, ' = ', seq.shape)
 
     # seq = Conv1D(num_seq_features,
-    seq = keras_genomics.layers.RevCompConv1D(num_seq_features,
-                 25,
-                 strides=25,
-                 padding='valid')(seq)
+    seq = RevCompConv1D(num_seq_features,
+                        25,
+                        strides=25,
+                        padding='valid')(seq)
     if batchnorm:
         # seq = BatchNormalization()(seq)
-        seq = keras_genomics.layers.normalization.RevCompConv1DBatchNorm()(seq)
+        seq = RevCompConv1DBatchNorm()(seq)
     seq = Activation('relu')(seq)
     print('shape of seq after final 1D conv = ', seq.shape)
 
@@ -185,12 +188,12 @@ def create_exchangeable_seq_resnet(batches, width, height, depth,
         x = Add()([x, y])
     if(CT_exchangeability):
         x = Conv2D(NUM_ASSAY_TYPES,
-               (1, width),
-               padding='valid')(x)
+                   (1, width),
+                   padding='valid')(x)
     else:
         x = Conv2D(NUM_CELL_TYPES,
-               (1, width),
-               padding='valid')(x)
+                   (1, width),
+                   padding='valid')(x)
     print('shape of x after final convolution = ', x.shape)
 
     x = Flatten()(x)
@@ -231,22 +234,22 @@ def create_exchangeable_seq_cnn(batches, width, height, depth,
 
     if(CT_exchangeability):
         x_mu = Conv2D(NUM_ASSAY_TYPES,
-                  (1, real_width),
-                  padding='valid')(x)
+                      (1, real_width),
+                      padding='valid')(x)
     else:
         x_mu = Conv2D(NUM_CELL_TYPES,
-                  (1, real_width),
-                  padding='valid')(x)
+                      (1, real_width),
+                      padding='valid')(x)
     x_mu = Flatten()(x_mu)
     if density_network:
         if(CT_exchangeability):
             x_log_precision = Conv2D(NUM_ASSAY_TYPES,
-                                 (1, real_width),
-                                 padding='valid')(x)
+                                     (1, real_width),
+                                     padding='valid')(x)
         else:
             x_log_precision = Conv2D(NUM_CELL_TYPES,
-                                 (1, real_width),
-                                 padding='valid')(x)
+                                     (1, real_width),
+                                     padding='valid')(x)
         x_log_precision = Flatten()(x_log_precision)
         x = Concatenate()([x_mu, x_log_precision])
     else:
@@ -288,12 +291,12 @@ def create_exchangeable_cnn(batches, width, height, depth,
     # Now we add a dense layer
     if(CT_exchangeability):
         x = Conv2D(NUM_ASSAY_TYPES,
-               (1, real_width),
-               padding='valid')(x)
+                   (1, real_width),
+                   padding='valid')(x)
     else:
         x = Conv2D(NUM_CELL_TYPES,
-               (1, real_width),
-               padding='valid')(x)
+                   (1, real_width),
+                   padding='valid')(x)
     # We want B * n * m
     x = Flatten()(x)
 
