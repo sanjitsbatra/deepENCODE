@@ -1,6 +1,6 @@
 deepENCODE TODO: 2 April 2020 
 
-1) Add RC layers to the sequence.
+1) Make RC layers work with reasonable pearson values for CT exchangeable.
 
 2) Add residual connections and dilated convolutions to the architecture.
 Systematically study the parameters' effect on performance.
