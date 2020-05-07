@@ -22,9 +22,17 @@ NUM_ASSAY_TYPES = 35
 ALLOWED_CHROMS = set(['chr{}'.format(k) for k in list(range(1, 23)) + ['X']])
 
 
-@njit('float32[:, :, :](int64, int64, int64, int64[:, :], float32[:, :])')
+def convert_to_classes(input_array, threshold):
+	return np.where(input_array > threshold, 1, 0)
+	# return np.asarray([1 if x > threshold else 0 for x in input_array])
+
+
+@njit('int64[:, :, :](int64, int64, int64, int64[:, :], int64[:, :])')
 def make_array(i, j, k, indices, arrays):
-    to_return = np.full((i, j, k), np.nan, dtype=np.float32)
+    # Replacing np.nan by -1 in the second argument in the line below
+    # is essential for preventing cross-entropy loss from diverging 6 May 2020
+    to_return = np.full((i, j, k), -1, dtype=np.int64) 
+    
     for i in range(indices.shape[0]):
         to_return[indices[i, 0], indices[i, 1], :] = arrays[i, :]
     return to_return
@@ -46,12 +54,15 @@ class BinnedHandler(Sequence):
                                                             chrom)
                     fname = join(BINNED_DATA_DIR, fname)
                     if isfile(fname):
-                        if chrom == '1':
+                        if chrom == '21':
                             print('Loading',
                                   fname.split('/')[-1].split('.')[0])
 			# Caution: We are working with log10(-log10 p-values ?)
-                        this_array = np.log1p( np.load(fname) ) 
-                        # np.log1p(np.load(fname))
+                        this_array = np.load(fname) # np.log1p(-log10 p-values) 
+
+			# Convert -log10(p-values) into classes
+			this_array = convert_to_classes(this_array, 3)
+
                         if chrom not in self.data:
                             self.data[chrom] = {}
                             self.indices[chrom] = None
@@ -121,7 +132,7 @@ class BinnedHandlerImputing(BinnedHandler):
         end = start + self.seg_len
         if end > self.data[chrom].shape[1]:
             data = np.full((self.data[chrom].shape[0], self.seg_len), -1,
-                           dtype=np.float32)
+                           dtype=np.int64) # changed to int for classification
             data_we_have = self.data[chrom][:, start:]
             data[:, :data_we_have.shape[1]] = data_we_have
         else:
@@ -257,12 +268,12 @@ def create_exchangeable_training_obs(obs, drop_prob, data_len=None, CT_exchangea
     mask = mask <= drop_prob
     mask = np.tile(mask, [input_tensor.shape[-1], 1, 1])
     mask = mask.transpose((1, 2, 0))
-    input_tensor[mask] = -1.0
+    input_tensor[mask] = -1
 
     # In both, input_feature and output, replace all nans
     # (denoting missing entries) with -1s
-    input_tensor[np.isnan(input_tensor)] = -1.0
-    output[np.isnan(output)] = -1.0
+    input_tensor[np.isnan(input_tensor)] = -1
+    output[np.isnan(output)] = -1 
 
     if(CT_exchangeability):
         # switch the m and l dimensions to obtain a (n x l x m) tensor

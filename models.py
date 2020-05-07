@@ -126,8 +126,8 @@ def seq_module(batches, width, height, depth,
                             dilation_rate=dilate,
                             padding='same')(seq)
         if batchnorm:
-            # seq = BatchNormalization()(seq)
-            seq = RevCompConv1DBatchNorm()(seq)
+            seq = BatchNormalization()(seq)
+            # seq = RevCompConv1DBatchNorm()(seq)
         seq = Activation('relu')(seq)
         print('shape of seq after convolution ', filt, ' = ', seq.shape)
 
@@ -137,8 +137,8 @@ def seq_module(batches, width, height, depth,
                         strides=25,
                         padding='valid')(seq)
     if batchnorm:
-        # seq = BatchNormalization()(seq)
-        seq = RevCompConv1DBatchNorm()(seq)
+        seq = BatchNormalization()(seq)
+        # seq = RevCompConv1DBatchNorm()(seq)
     seq = Activation('relu')(seq)
     print('shape of seq after final 1D conv = ', seq.shape)
 
@@ -235,12 +235,16 @@ def create_exchangeable_seq_cnn(batches, width, height, depth,
     if(CT_exchangeability):
         x_mu = Conv2D(NUM_ASSAY_TYPES,
                       (1, real_width),
-                      padding='valid')(x)
+                      padding='valid',
+                      activation="sigmoid")(x)
     else:
         x_mu = Conv2D(NUM_CELL_TYPES,
                       (1, real_width),
-                      padding='valid')(x)
+                      padding='valid',
+                      activation="sigmoid")(x)
+
     x_mu = Flatten()(x_mu)
+
     if density_network:
         if(CT_exchangeability):
             x_log_precision = Conv2D(NUM_ASSAY_TYPES,
@@ -254,9 +258,8 @@ def create_exchangeable_seq_cnn(batches, width, height, depth,
         x = Concatenate()([x_mu, x_log_precision])
     else:
         x = x_mu
-
+    
     print('shape of x after final convolution = ', x.shape)
-
     model = Model(inputs, x)
     return model
 
@@ -308,11 +311,19 @@ def create_exchangeable_cnn(batches, width, height, depth,
 
 
 def customLoss(yTrue, yPred):
-    # import keras.backend as KB
-    skip_indices = K.tf.where(K.tf.equal(yTrue, -1.0), K.tf.zeros_like(yTrue),
+    # mask_value = K.variable(-1.0)
+    # mask = K.all(K.equal(yTrue, mask_value), axis = 0)
+    # skip_indices = 1 - K.cast(mask, K.floatx())
+
+    skip_indices = K.tf.where(K.tf.equal(yTrue, -1), K.tf.zeros_like(yTrue),
                               K.tf.ones_like(yTrue))
-    # return logcosh(skip_indices * yTrue, skip_indices * yPred)
-    return K.mean(skip_indices * K.square(yTrue - yPred))
+
+    # For classification (categorical crossentropy will report a bug)
+    loss = K.binary_crossentropy(yTrue, yPred) * skip_indices  
+    return K.sum(loss) / K.sum(skip_indices)
+
+    # For regression
+    # return K.mean(skip_indices * K.square(yTrue - yPred))
 
 
 def maximum_likelihood_loss(y_true, y_pred, num_output):

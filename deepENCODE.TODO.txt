@@ -1,4 +1,6 @@
-deepENCODE TODO: 2 April 2020 
+deepENCODE TODO: 6 May 2020 
+
+*) Classification loss diverges.
 
 1) Make RC layers work with reasonable pearson values for CT exchangeable.
 

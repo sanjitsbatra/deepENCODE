@@ -18,7 +18,7 @@ def lr_scheduler(epoch):
     elif epoch < 100:
         return 1e-3
     else:
-        return 1e-5
+        return 5e-4
 
 
 if __name__ == '__main__':
@@ -26,12 +26,12 @@ if __name__ == '__main__':
     window_size = 100
     seg_len = 1000
     steps_per_epoch = 100  # int(3.5e9/batch_size/(seg_len-window_size+1)/25.)
-    epochs = 10     # number of passes over the whole genome-ish
+    epochs = 4     # number of passes over the whole genome-ish
 
     num_conv = int(sys.argv[2])
     num_seq_conv = int(sys.argv[3])
     num_filters = int(sys.argv[4])
-    model_type_flag = 'regression'
+    model_type_flag = 'classification' # 'regression'
     drop_probability = float(sys.argv[5])
 
     num_seq_filters = int(sys.argv[6])
@@ -50,6 +50,8 @@ if __name__ == '__main__':
     # Check to make sure this wasn't accidentally True
     density_network = False
     if model_type_flag == 'regression':
+        density_network = False
+    elif model_type_flag == 'classification':
         density_network = False
     else:
         assert model_type_flag == 'density'
@@ -87,7 +89,6 @@ if __name__ == '__main__':
         density_network=density_network,
 	CT_exchangeability=CT_exchangeability)
         
-
     opt = Adam(lr=1e-3)
     if density_network:
         def loss(a, b):
@@ -109,7 +110,6 @@ if __name__ == '__main__':
     filepath = run_name+'/model-{epoch:02d}.hdf5'
     checkpoint = ModelCheckpoint(filepath)
     lr_schedule = LearningRateScheduler(lr_scheduler)
-
     callbacks_list = [lr_schedule, checkpoint]
 
     # We then train with this batch of data
