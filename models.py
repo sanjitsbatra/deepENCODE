@@ -232,16 +232,29 @@ def create_exchangeable_seq_cnn(batches, width, height, depth,
         real_width = real_width - (patch_width - 1) * dilate
         print('shape of x after ', filter_params, ' exchangeable = ', x.shape)
 
+    # For Regression:
     if(CT_exchangeability):
-        x_mu = Conv2D(NUM_ASSAY_TYPES,
-                      (1, real_width),
-                      padding='valid',
-                      activation="sigmoid")(x)
+	x_mu = Conv2D(NUM_ASSAY_TYPES,
+		      (1, real_width),
+		      padding='valid',
+		      activation="linear")(x)
     else:
         x_mu = Conv2D(NUM_CELL_TYPES,
-                      (1, real_width),
+		      (1, real_width),
                       padding='valid',
-                      activation="sigmoid")(x)
+		      activation="linear")(x)
+
+    # For Classification
+    # if(CT_exchangeability):
+    #     x_mu = Conv2D(NUM_ASSAY_TYPES,
+    #                   (1, real_width),
+    #                   padding='valid',
+    #                   activation="sigmoid")(x)
+    # else:
+    #     x_mu = Conv2D(NUM_CELL_TYPES,
+    #                   (1, real_width),
+    #                   padding='valid',
+    #                   activation="sigmoid")(x)
 
     x_mu = Flatten()(x_mu)
 
@@ -311,19 +324,15 @@ def create_exchangeable_cnn(batches, width, height, depth,
 
 
 def customLoss(yTrue, yPred):
-    # mask_value = K.variable(-1.0)
-    # mask = K.all(K.equal(yTrue, mask_value), axis = 0)
-    # skip_indices = 1 - K.cast(mask, K.floatx())
-
     skip_indices = K.tf.where(K.tf.equal(yTrue, -1), K.tf.zeros_like(yTrue),
                               K.tf.ones_like(yTrue))
 
-    # For classification (categorical crossentropy will report a bug)
-    loss = K.binary_crossentropy(yTrue, yPred) * skip_indices  
-    return K.sum(loss) / K.sum(skip_indices)
+    # For Regression
+    return K.mean(skip_indices * K.square(yTrue - yPred))
 
-    # For regression
-    # return K.mean(skip_indices * K.square(yTrue - yPred))
+    # For Classification (TODO: categorical crossentropy reports a bug)
+    # loss = K.binary_crossentropy(yTrue, yPred) * skip_indices  
+    # return K.sum(loss) / K.sum(skip_indices)
 
 
 def maximum_likelihood_loss(y_true, y_pred, num_output):

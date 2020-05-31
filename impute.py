@@ -46,8 +46,9 @@ def process_batch(batch, batch_size, imputed, locus, chrom_len, stride,
     batch = np.array(batch)
 
     batch_output = trained_model.predict(batch) 
-    # np.expm1(trained_model.predict(batch)) for regression
 
+    # For Regression:
+    np.expm1(trained_model.predict(batch))
 
     if(CT_exchangeability):
     	batch_output = np.reshape(batch_output,

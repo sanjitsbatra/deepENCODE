@@ -27,8 +27,17 @@ def convert_to_classes(input_array, threshold):
 	# return np.asarray([1 if x > threshold else 0 for x in input_array])
 
 
+@njit('float32[:, :, :](int64, int64, int64, int64[:, :], float32[:, :])')
+def make_array_for_regression(i, j, k, indices, arrays):
+    to_return = np.full((i, j, k), np.nan, dtype=np.float32) 
+    
+    for i in range(indices.shape[0]):
+        to_return[indices[i, 0], indices[i, 1], :] = arrays[i, :]
+    return to_return
+
+
 @njit('int64[:, :, :](int64, int64, int64, int64[:, :], int64[:, :])')
-def make_array(i, j, k, indices, arrays):
+def make_array_for_classification(i, j, k, indices, arrays):
     # Replacing np.nan by -1 in the second argument in the line below
     # is essential for preventing cross-entropy loss from diverging 6 May 2020
     to_return = np.full((i, j, k), -1, dtype=np.int64) 
@@ -57,11 +66,16 @@ class BinnedHandler(Sequence):
                         if chrom == '21':
                             print('Loading',
                                   fname.split('/')[-1].split('.')[0])
-			# Caution: We are working with log10(-log10 p-values ?)
-                        this_array = np.load(fname) # np.log1p(-log10 p-values) 
 
+                        this_array = np.load(fname) 
+			
+			# For Regression:
+			# Caution: We are working with log10(-log10 p-values ?)
+			this_array = np.log1p(this_array)
+
+			# For Classification:
 			# Convert -log10(p-values) into classes
-			this_array = convert_to_classes(this_array, 3)
+			# this_array = convert_to_classes(this_array, 3)
 
                         if chrom not in self.data:
                             self.data[chrom] = {}
@@ -99,7 +113,7 @@ class BinnedHandler(Sequence):
         return np.array(batch)
 
     def load_data(self, chrom, start, end):
-        return make_array(NUM_CELL_TYPES,
+        return make_array_for_regression(NUM_CELL_TYPES,
                           NUM_ASSAY_TYPES,
                           end - start,
                           self.indices[chrom],
@@ -131,13 +145,19 @@ class BinnedHandlerImputing(BinnedHandler):
         chrom, start = self.idx_to_chrom_and_start(idx)
         end = start + self.seg_len
         if end > self.data[chrom].shape[1]:
+	    # For Regression
             data = np.full((self.data[chrom].shape[0], self.seg_len), -1,
-                           dtype=np.int64) # changed to int for classification
+			    dtype=np.float32)
+	    
+	    # For Classification
+            # data = np.full((self.data[chrom].shape[0], self.seg_len), -1,
+            #                dtype=np.int64)
+
             data_we_have = self.data[chrom][:, start:]
             data[:, :data_we_have.shape[1]] = data_we_have
         else:
             data = self.data[chrom][:, start:end]
-        batch = make_array(NUM_CELL_TYPES,
+        batch = make_array_for_regression(NUM_CELL_TYPES,
                            NUM_ASSAY_TYPES,
                            self.seg_len,
                            self.indices[chrom],

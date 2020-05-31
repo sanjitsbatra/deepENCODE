@@ -31,7 +31,7 @@ if __name__ == '__main__':
     num_conv = int(sys.argv[2])
     num_seq_conv = int(sys.argv[3])
     num_filters = int(sys.argv[4])
-    model_type_flag = 'classification' # 'regression'
+    model_type_flag = 'Regression' # 'Classification'
     drop_probability = float(sys.argv[5])
 
     num_seq_filters = int(sys.argv[6])
@@ -49,9 +49,9 @@ if __name__ == '__main__':
 
     # Check to make sure this wasn't accidentally True
     density_network = False
-    if model_type_flag == 'regression':
+    if model_type_flag == 'Regression':
         density_network = False
-    elif model_type_flag == 'classification':
+    elif model_type_flag == 'Classification':
         density_network = False
     else:
         assert model_type_flag == 'density'
