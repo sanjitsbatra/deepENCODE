@@ -9,13 +9,14 @@ from keras.callbacks import ModelCheckpoint, LearningRateScheduler
 import sys
 import os
 
+
 NUM_CPU_THREADS = 5
 
 
 def lr_scheduler(epoch):
     if epoch < 3:
         return 2e-3
-    elif epoch < 100:
+    elif epoch < 45:
         return 1e-3
     else:
         return 5e-4
@@ -23,10 +24,10 @@ def lr_scheduler(epoch):
 
 if __name__ == '__main__':
     batch_size = 4
-    window_size = 100
-    seg_len = 1000
-    steps_per_epoch = 100  # int(3.5e9/batch_size/(seg_len-window_size+1)/25.)
-    epochs = 4     # number of passes over the whole genome-ish
+    window_size = 100 # => 2.5Kb window on each side line 171 of data_loader
+    seg_len = None
+    steps_per_epoch = 100  
+    epochs = 4     
 
     num_conv = int(sys.argv[2])
     num_seq_conv = int(sys.argv[3])
@@ -57,8 +58,8 @@ if __name__ == '__main__':
         assert model_type_flag == 'density'
 
     # Fix conv_length and num_filters to 4 or 8? and change dilation rate
-    feature_filters_input = [[4, num_filters, 1]]*num_conv
-    seq_filters_input = [[4, num_filters, 1]]*num_seq_conv
+    feature_filters_input = [[11, num_filters, 1]]*num_conv
+    seq_filters_input = [[11, num_filters, 1]]*num_seq_conv
 
     if(CT_exchangeability):
         model = create_exchangeable_seq_cnn(
@@ -73,7 +74,7 @@ if __name__ == '__main__':
         exch_func='max',
         batchnorm=False,
         density_network=density_network,
-	CT_exchangeability=CT_exchangeability)
+        CT_exchangeability=CT_exchangeability)
     else:
         model = create_exchangeable_seq_cnn(
         batch_size,
@@ -87,7 +88,7 @@ if __name__ == '__main__':
         exch_func='max',
         batchnorm=False,
         density_network=density_network,
-	CT_exchangeability=CT_exchangeability)
+        CT_exchangeability=CT_exchangeability)
         
     opt = Adam(lr=1e-3)
     if density_network:

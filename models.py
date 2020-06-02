@@ -154,6 +154,114 @@ def seq_module(batches, width, height, depth,
     return x
 
 
+def create_exchangeable_seq_cnn(batches, width, height, depth,
+                                feature_filters=((11, 64, 1),
+                                                 (11, 64, 1)),
+                                seq_filters=((11, 128, 1),
+                                             (11, 64, 1),
+                                             (11, 32, 1)),
+                                num_seq_features=32,
+                                seg_len=None,
+                                exch_func='max',
+                                batchnorm=False,
+                                density_network=False,
+                                CT_exchangeability=True):
+    if seg_len is None:
+        seg_len = width
+
+    input_shape = (batches, height*seg_len*depth) # + 25*4*seg_len)
+    print('input_shape = ', input_shape)
+
+    inputs = Input(batch_shape=input_shape)
+    x = seq_module(batches, width, height, depth, seq_filters,
+                   num_seq_features, seg_len, batchnorm, inputs)
+
+    real_width = width
+    print('real width = '+str(width))
+
+    for filter_params in feature_filters:
+        patch_width, patch_depth, dilate = filter_params
+                x = exchangeable_layer(x, patch_width, patch_depth, dilate, exch_func,
+                               'valid', batchnorm)
+
+        # Keep track of real width after each convolution
+        real_width = real_width - (patch_width - 1) * dilate
+        
+        print('shape of x after ', filter_params, ' exchangeable = ', x.shape)
+
+    # In order to output exactly NUM_GENE_EXPRESSION_CELL_TYPES outputs
+    # We have one filter at this step instead of NUM_ASSAY_TYPES filters
+    # However, since NUM_CELL_TYPES != NUM_GENE_EXPRESSION_CELL_TYPES
+    # We will have to enforce this by: TODO
+    
+    # For Regression:
+    if(CT_exchangeability):
+        x_mu = Conv2D(1, #NUM_ASSAY_TYPES,
+              (1, real_width),
+              padding='valid',
+              activation="linear")(x)
+    else:
+        x_mu = Conv2D(1, #NUM_CELL_TYPES,
+              (1, real_width),
+                      padding='valid',
+              activation="linear")(x)
+
+    # For Classification
+    # if(CT_exchangeability):
+    #     x_mu = Conv2D(NUM_ASSAY_TYPES,
+    #                   (1, real_width),
+    #                   padding='valid',
+    #                   activation="sigmoid")(x)
+    # else:
+    #     x_mu = Conv2D(NUM_CELL_TYPES,
+    #                   (1, real_width),
+    #                   padding='valid',
+    #                   activation="sigmoid")(x)
+
+    x = Flatten()(x_mu)
+
+    if density_network:
+        if(CT_exchangeability):
+            x_log_precision = Conv2D(NUM_ASSAY_TYPES,
+                                     (1, real_width),
+                                     padding='valid')(x)
+        else:
+            x_log_precision = Conv2D(NUM_CELL_TYPES,
+                                     (1, real_width),
+                                     padding='valid')(x)
+        x_log_precision = Flatten()(x_log_precision)
+        x = Concatenate()([x_mu, x_log_precision])
+    else:
+        x = x_mu
+    
+    print('shape of x after final convolution = ', x.shape)
+    model = Model(inputs, x)
+    return model
+
+
+def customLoss(yTrue, yPred):
+    skip_indices = K.tf.where(K.tf.equal(yTrue, -1), K.tf.zeros_like(yTrue),
+                              K.tf.ones_like(yTrue))
+
+    # For Regression
+    return K.mean(skip_indices * K.square(yTrue - yPred))
+
+    # For Classification (TODO: categorical crossentropy reports a bug)
+    # loss = K.binary_crossentropy(yTrue, yPred) * skip_indices  
+    # return K.sum(loss) / K.sum(skip_indices)
+
+
+def maximum_likelihood_loss(y_true, y_pred, num_output):
+    mu = y_pred[:, :num_output]
+    log_precision = y_pred[:, num_output:] / 1e3
+    skip_indices = K.tf.where(K.tf.equal(y_true, -1.0),
+                              K.tf.zeros_like(y_true),
+                              K.tf.ones_like(y_true))
+    like = skip_indices * (K.square(y_true - mu) * K.exp(log_precision) -
+                           log_precision)
+    return K.mean(like)
+
+
 def create_exchangeable_seq_resnet(batches, width, height, depth,
                                    feature_filters=((5, 1),) * 10,
                                    seq_filters=((10, 8, 1),
@@ -165,6 +273,7 @@ def create_exchangeable_seq_resnet(batches, width, height, depth,
                                    exch_func='nonneg_mean',
                                    batchnorm=False,
                                    CT_exchangeability=True):
+
     if seg_len is None:
         seg_len = width
     input_shape = (batches, height*seg_len*depth + 25*4*seg_len)
@@ -197,82 +306,6 @@ def create_exchangeable_seq_resnet(batches, width, height, depth,
     print('shape of x after final convolution = ', x.shape)
 
     x = Flatten()(x)
-    model = Model(inputs, x)
-    return model
-
-
-def create_exchangeable_seq_cnn(batches, width, height, depth,
-                                feature_filters=((5, 64, 1),
-                                                 (5, 64, 1)),
-                                seq_filters=((10, 128, 1),
-                                             (10, 64, 1),
-                                             (10, 32, 1)),
-                                num_seq_features=32,
-                                seg_len=None,
-                                exch_func='max',
-                                batchnorm=False,
-                                density_network=False,
-                                CT_exchangeability=True):
-    if seg_len is None:
-        seg_len = width
-    input_shape = (batches, height*seg_len*depth + 25*4*seg_len)
-    print('input_shape = ', input_shape)
-
-    inputs = Input(batch_shape=input_shape)
-    x = seq_module(batches, width, height, depth, seq_filters,
-                   num_seq_features, seg_len, batchnorm, inputs)
-
-    real_width = width
-    print('real width = '+str(width))
-
-    for filter_params in feature_filters:
-        patch_width, patch_depth, dilate = filter_params
-        x = exchangeable_layer(x, patch_width, patch_depth, dilate, exch_func,
-                               'valid', batchnorm)
-        real_width = real_width - (patch_width - 1) * dilate
-        print('shape of x after ', filter_params, ' exchangeable = ', x.shape)
-
-    # For Regression:
-    if(CT_exchangeability):
-	x_mu = Conv2D(NUM_ASSAY_TYPES,
-		      (1, real_width),
-		      padding='valid',
-		      activation="linear")(x)
-    else:
-        x_mu = Conv2D(NUM_CELL_TYPES,
-		      (1, real_width),
-                      padding='valid',
-		      activation="linear")(x)
-
-    # For Classification
-    # if(CT_exchangeability):
-    #     x_mu = Conv2D(NUM_ASSAY_TYPES,
-    #                   (1, real_width),
-    #                   padding='valid',
-    #                   activation="sigmoid")(x)
-    # else:
-    #     x_mu = Conv2D(NUM_CELL_TYPES,
-    #                   (1, real_width),
-    #                   padding='valid',
-    #                   activation="sigmoid")(x)
-
-    x_mu = Flatten()(x_mu)
-
-    if density_network:
-        if(CT_exchangeability):
-            x_log_precision = Conv2D(NUM_ASSAY_TYPES,
-                                     (1, real_width),
-                                     padding='valid')(x)
-        else:
-            x_log_precision = Conv2D(NUM_CELL_TYPES,
-                                     (1, real_width),
-                                     padding='valid')(x)
-        x_log_precision = Flatten()(x_log_precision)
-        x = Concatenate()([x_mu, x_log_precision])
-    else:
-        x = x_mu
-    
-    print('shape of x after final convolution = ', x.shape)
     model = Model(inputs, x)
     return model
 
@@ -321,26 +354,3 @@ def create_exchangeable_cnn(batches, width, height, depth,
 
     # return the CNN
     return model
-
-
-def customLoss(yTrue, yPred):
-    skip_indices = K.tf.where(K.tf.equal(yTrue, -1), K.tf.zeros_like(yTrue),
-                              K.tf.ones_like(yTrue))
-
-    # For Regression
-    return K.mean(skip_indices * K.square(yTrue - yPred))
-
-    # For Classification (TODO: categorical crossentropy reports a bug)
-    # loss = K.binary_crossentropy(yTrue, yPred) * skip_indices  
-    # return K.sum(loss) / K.sum(skip_indices)
-
-
-def maximum_likelihood_loss(y_true, y_pred, num_output):
-    mu = y_pred[:, :num_output]
-    log_precision = y_pred[:, num_output:] / 1e3
-    skip_indices = K.tf.where(K.tf.equal(y_true, -1.0),
-                              K.tf.zeros_like(y_true),
-                              K.tf.ones_like(y_true))
-    like = skip_indices * (K.square(y_true - mu) * K.exp(log_precision) -
-                           log_precision)
-    return K.mean(like)

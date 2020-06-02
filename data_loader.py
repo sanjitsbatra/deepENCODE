@@ -7,54 +7,57 @@ import numpy as np
 from os.path import join, isfile
 from numba import njit
 from keras.utils import Sequence
+import random, sys
 # from multiprocessing import Pool
 
 
 SEQ_DIR = '/scratch/sanjit/ENCODE_Imputation_Challenge/2_April_2020/Data/genome'
 BINNED_DATA_DIR = ('/scratch/sanjit/ENCODE_Imputation_Challenge/2_April_2020'
-		   '/Data/Training_Data')
-
-# VALIDATION_BINNED_DATA_DIR = ('/scratch/sanjit/ENCODE_Imputation_Challenge'
-#                              '/Smaller_Data/chr7_Validation/')
+           '/Data/Training_Data')
+GENE_EXPRESSION_DATA = ('/scratch/sanjit/ENCODE_Imputation_Challenge/2_April_2020'
+            '/Data/Gene_Expression/gene_expression.tsv')
 
 NUM_CELL_TYPES = 51
 NUM_ASSAY_TYPES = 35
 ALLOWED_CHROMS = set(['chr{}'.format(k) for k in list(range(1, 23)) + ['X']])
 
 
+# For converting p-values into classes for Classification
 def convert_to_classes(input_array, threshold):
-	return np.where(input_array > threshold, 1, 0)
-	# return np.asarray([1 if x > threshold else 0 for x in input_array])
+    return np.where(input_array > threshold, 1, 0)
+    # return np.asarray([1 if x > threshold else 0 for x in input_array])
 
 
 @njit('float32[:, :, :](int64, int64, int64, int64[:, :], float32[:, :])')
-def make_array_for_regression(i, j, k, indices, arrays):
+def make_input_for_regression(i, j, k, indices, data):
     to_return = np.full((i, j, k), np.nan, dtype=np.float32) 
     
     for i in range(indices.shape[0]):
-        to_return[indices[i, 0], indices[i, 1], :] = arrays[i, :]
+        to_return[indices[i, 0], indices[i, 1], :] = data[i, :]
     return to_return
 
 
 @njit('int64[:, :, :](int64, int64, int64, int64[:, :], int64[:, :])')
-def make_array_for_classification(i, j, k, indices, arrays):
+def make_input_for_classification(i, j, k, indices, data):
     # Replacing np.nan by -1 in the second argument in the line below
     # is essential for preventing cross-entropy loss from diverging 6 May 2020
     to_return = np.full((i, j, k), -1, dtype=np.int64) 
     
     for i in range(indices.shape[0]):
-        to_return[indices[i, 0], indices[i, 1], :] = arrays[i, :]
+        to_return[indices[i, 0], indices[i, 1], :] = data[i, :]
     return to_return
 
 
 class BinnedHandler(Sequence):
 
-    def __init__(self, data_len, batch_size):
-        self.data_len = data_len
+    def __init__(self, window_size, batch_size):
+        self.window_size = window_size
         self.batch_size = batch_size
+
         self.data = {}
         self.chrom_lens = {}
         self.indices = {}
+
         for cell_type in range(1, NUM_CELL_TYPES + 1):
             for assay_type in range(1, NUM_ASSAY_TYPES + 1):
                 for chrom in [str(k) for k in range(1, 23)] + ['X']:
@@ -69,13 +72,13 @@ class BinnedHandler(Sequence):
 
                         this_array = np.load(fname) 
 			
-			# For Regression:
-			# Caution: We are working with log10(-log10 p-values ?)
-			this_array = np.log1p(this_array)
+                        # For Regression:
+                        # Caution: We are working with log10(-log10 p-values ?)
+                        this_array = np.log1p(this_array)
 
-			# For Classification:
-			# Convert -log10(p-values) into classes
-			# this_array = convert_to_classes(this_array, 3)
+                        # For Classification:
+                        # Convert -log10(p-values) into classes
+                        # this_array = convert_to_classes(this_array, 3)
 
                         if chrom not in self.data:
                             self.data[chrom] = {}
@@ -83,41 +86,211 @@ class BinnedHandler(Sequence):
                             self.chrom_lens[chrom] = this_array.shape[0]
                         self.data[chrom][(cell_type, assay_type)] = this_array
         print('...Stacking arrays')
+
         for chrom in self.data.keys():
             indices, array = zip(*self.data[chrom].items())
+
+            # shape is: (chrom_length/25, cell_types*assay_types)
             self.data[chrom] = np.vstack(array)
+
+            # shape is: (cell_types*assay_types, 1)
             self.indices[chrom] = np.array(indices)
-        self.chrom_list, self.tot_len_list = zip(*self.chrom_lens.items())
-        self.tot_len_list = np.array(self.tot_len_list) - self.data_len
-        self.tot_len_list = np.cumsum(self.tot_len_list)
-        # TODO: the following line will introduce some edge effects on the
-        # final chromosome.
-        self.length = self.tot_len_list[-1] // self.batch_size
-        self.idx_map = np.arange(self.tot_len_list[-1])
-        print(self.chrom_lens)
 
-    def idx_to_chrom_and_start(self, idx):
-        chr_idx = np.where(self.tot_len_list > idx)[0][0]
-        chrom = self.chrom_list[chr_idx]
-        start = idx if chr_idx == 0 else idx - self.tot_len_list[chr_idx - 1]
-        return chrom, start
 
-    def __len__(self):
-        return self.length
 
-    def __getitem__(self, idx):
+        # # contains #chroms, chrom_lengths
+        # self.chrom_list, self.tot_len_list = zip(*self.chrom_lens.items())
+
+
+        # Instead of using idx to generate training data 
+        # by sampling random genomic loci, we can now use a list of genes
+        self.gene_position = {}
+        self.gene_expression = {}
+        f_gene_expression = open(GENE_EXPRESSION_DATA, 'r')
+        line_number = 0
+        for line in f_gene_expression:
+            line_number += 1
+            vec = line.rstrip("\n").split("\t")
+
+            if(line_number == 1):
+                for col_i in range(6, len(vec)):
+                    cell_type_name[col_i] = int(vec[col_i][1:3])
+                continue
+
+            chrom_name = vec[0][3:] # remove the chr prefix 
+            tss = int(vec[1]) / 25  # work at 25bp resolution
+            gene_name = vec[5].split(".")[0]
+            # gene_length = ( int(vec[2]) - int(vec[1]) ) / 25
+
+            # Initialize a gene expression vector containing NUM_CELL_TYPE
+            # entries, with the cell types for which we don't have 
+            # gene expression values, always storing -1, for each gene
+            # This is being done so that the custom loss function ignores
+            # these -1 values while computing the MSE loss; while still 
+            # being able to transfer learn from the EIC network output
+            self.gene_expression[gene_name] = np.full((NUM_CELL_TYPES, 1), 
+                                                -1.0, dtype=np.float32)
+            for col_i in range(6, len(vec)):
+                self.gene_position[gene_name] = (chrom_name, tss)
+                self.gene_expression[gene_name][cell_type_name[col_i]] = \
+                                                            float(vec[col_i])
+
+        self.gene_names = self.gene_expression.keys()
+
+        # ##################################################################
+        # # What is this for?
+        # self.data_len = data_len
+
+        # self.tot_len_list = np.array(self.tot_len_list) - self.data_len
+        # self.tot_len_list = np.cumsum(self.tot_len_list)
+        # # TODO: the following line will introduce some edge effects on the
+        # # final chromosome.
+        # self.length = self.tot_len_list[-1] // self.batch_size
+        # self.idx_map = np.arange(self.tot_len_list[-1])
+        # print(self.chrom_lens)
+        # ##################################################################
+
+    # # idx is a genome-wide (chromosome-concatenated index) 
+    # def idx_to_chrom_and_start(self, idx):
+    #     chr_idx = np.where(self.tot_len_list > idx)[0][0]
+    #     chrom = self.chrom_list[chr_idx]
+    #     start = idx if chr_idx == 0 else idx - self.tot_len_list[chr_idx - 1]
+    #     return chrom, start
+
+    # def __len__(self):
+    #     return self.length
+
+    # This function needs to generate random genes
+    def __getitem__(self):
         batch = []
-        for i in range(self.batch_size*idx, self.batch_size*(idx+1)):
-            chrom, start = self.idx_to_chrom_and_start(self.idx_map[i])
-            batch.append(self.load_data(chrom, start, start + self.data_len))
-        return np.array(batch)
 
-    def load_data(self, chrom, start, end):
-        return make_array_for_regression(NUM_CELL_TYPES,
+        # randomly sample genes
+        genes = random.sample(self.gene_names, self.batch_size)
+
+        for gene in genes:        
+            chrom, tss = self.gene_position[gene]
+            gene_expression = self.gene_expression[gene]
+
+            # save the gene_names, (cell_type x window_size x assay_type) 
+            batch.append([genes, self.load_gene_data(chrom, tss, self.window_size),
+                        gene_expression]) # and gene_expression values as list
+
+        return batch
+
+    def load_gene_data(self, chrom, tss, window_size):
+        return make_input_for_regression(NUM_CELL_TYPES,
                           NUM_ASSAY_TYPES,
-                          end - start,
+                          chrom,
                           self.indices[chrom],
-                          self.data[chrom][:, start:end])
+                          self.data[chrom][:, tss-window_size:tss+window_size])
+
+
+# by passing object as argument, SeqHandler becomes an object of BinnedHandler
+class SeqHandler(object):
+
+    def __init__(self):
+        self.dna = {}
+        print('...Reading DNA sequences now')
+        for chrom in ['chr' + str(k) for k in range(1, 23)] + ['chrX']:
+            fname = join(SEQ_DIR, chrom + '.npy')
+
+            # The value at each position is in {0, 1, 2, 3, 4}
+            # corresponding to {'A', 'C', 'G', 'T', 'N'}
+            self.dna[chrom[3:]] = np.load(fname)
+
+
+
+    def get_dna(self, gene_names):
+        seq = []
+        for gene in gene_names:
+            chrom, tss = self.gene_position[gene]
+            start = (tss - self.window_size) * 25
+            end = (tss + self.window_size) * 25
+            this_seq = self.dna[chrom][max(start, 0):min(end, self.chrom_lens[chrom]*25)]
+
+            # Pad the input
+            this_seq = np.pad(this_seq,
+                              (max(0, 0-start), max(0, end - self.chrom_lens[chrom]*25)),
+                              'constant',
+                              constant_values=4)
+
+            output_seq = np.zeros((4, len(this_seq)))
+
+            keep = this_seq < 4
+            output_seq[this_seq[keep], np.arange(len(this_seq))[keep]] = 1
+
+            # Output should be (_, 4) or (_, 1)
+            seq.append(output_seq)
+        
+        return seq
+
+
+class BinnedHandlerTraining(BinnedHandler):
+
+    def __init__(self,
+                 window_size,
+                 batch_size,
+                 seg_len=None,
+                 drop_prob=0.5,
+                 CT_exchangeability=True):
+
+        if seg_len is None:
+            seg_len = window_size
+        else:
+            print("seg_len should not be used!")
+            sys.exit(-1)
+ 
+        self.window_size = window_size
+        self.drop_prob = drop_prob
+        self.CT_exchangeability = CT_exchangeability
+ 
+        BinnedHandler.__init__(self, window_size, batch_size)
+
+    def __getitem__(self):
+        batch = BinnedHandler.__getitem__(self)
+        
+        gene_names = []
+        inputs = []
+        outputs = []
+        
+        # TODO: convert for to list comprehension
+        for b in batch:
+            gene_names.append(b[0])
+            inputs.append(b[1])
+            outputs.append(b[2])
+        
+        return gene_names, create_exchangeable_training_data(inputs,
+                                                 drop_prob=self.drop_prob,
+                                                 window_size=self.window_size,
+                        CT_exchangeability=self.CT_exchangeability), outputs
+
+    # def on_epoch_end(self):
+    #     self.idx_map = np.random.permutation(self.tot_len_list[-1])
+
+
+class BinnedHandlerSeqTraining(BinnedHandlerTraining, SeqHandler):
+    '''Includes sequence information'''
+
+    def __init__(self,
+                 window_size,
+                 batch_size,
+                 seg_len=None,
+                 drop_prob=0.5,
+                 CT_exchangeability=True):
+
+        BinnedHandlerTraining.__init__(
+            self, window_size, batch_size, seg_len, drop_prob, CT_exchangeability)
+        
+        SeqHandler.__init__(self) 
+
+    def __getitem__(self):
+        gene_names, x, y = BinnedHandlerTraining.__getitem__(self)
+
+        seq = self.get_dna(gene_names)
+        
+        x = x.reshape((self.batch_size, -1))
+        x = np.hstack([x, seq])
+        return x, y
 
 
 class BinnedHandlerImputing(BinnedHandler):
@@ -145,11 +318,11 @@ class BinnedHandlerImputing(BinnedHandler):
         chrom, start = self.idx_to_chrom_and_start(idx)
         end = start + self.seg_len
         if end > self.data[chrom].shape[1]:
-	    # For Regression
+            # For Regression
             data = np.full((self.data[chrom].shape[0], self.seg_len), -1,
-			    dtype=np.float32)
-	    
-	    # For Classification
+                            dtype=np.float32)
+
+            # For Classification
             # data = np.full((self.data[chrom].shape[0], self.seg_len), -1,
             #                dtype=np.int64)
 
@@ -171,84 +344,7 @@ class BinnedHandlerImputing(BinnedHandler):
             return batch.transpose((0, 2, 3, 1 ))
 
 
-class BinnedHandlerTraining(BinnedHandler):
-
-    def __init__(self,
-                 network_width,
-                 batch_size,
-                 seg_len=None,
-                 drop_prob=0.5,
-                 CT_exchangeability=True):
-        if seg_len is None:
-            seg_len = network_width
-        self.network_width = network_width
-        self.drop_prob = drop_prob
-        self.CT_exchangeability = CT_exchangeability
-        BinnedHandler.__init__(self, seg_len, batch_size)
-        self.idx_map = np.random.permutation(self.tot_len_list[-1])
-
-    def __getitem__(self, idx):
-        batch = BinnedHandler.__getitem__(self, idx)  # already pre-processed
-        return create_exchangeable_training_data(batch,
-                                                 drop_prob=self.drop_prob,
-                                                 data_len=self.network_width,
-                                  CT_exchangeability=self.CT_exchangeability)
-
-    def on_epoch_end(self):
-        self.idx_map = np.random.permutation(self.tot_len_list[-1])
-
-
-class SeqHandler(object):
-
-    def __init__(self, seq_len):
-        self.dna = {}
-        self.seq_len = seq_len
-        print('...Reading DNA sequences now')
-        for chrom in ['chr' + str(k) for k in range(1, 23)] + ['chrX']:
-            fname = join(SEQ_DIR, chrom + '.npy')
-            self.dna[chrom[3:]] = np.load(fname)
-
-    def get_dna(self, indices):
-        seq = []
-        for i in indices:
-            chrom, start = self.idx_to_chrom_and_start(self.idx_map[i])
-            start = start * 25
-            end = start + self.seq_len*25
-            this_seq = self.dna[chrom][start:end]
-            this_seq = np.pad(this_seq,
-                              (0, self.seq_len*25 - this_seq.shape[0]),
-                              'constant',
-                              constant_values=4)
-            to_append = np.zeros((4, self.seq_len*25))
-            keep = this_seq < 4
-            to_append[this_seq[keep], np.arange(self.seq_len*25)[keep]] = 1
-            seq.append(to_append.flatten())
-        return seq
-
-
-class BinnedHandlerSeqTraining(BinnedHandlerTraining, SeqHandler):
-    '''Includes sequence information'''
-
-    def __init__(self,
-                 network_width,
-                 batch_size,
-                 seg_len=None,
-                 drop_prob=0.5,
-                 CT_exchangeability=True):
-        BinnedHandlerTraining.__init__(
-            self, network_width, batch_size, seg_len, drop_prob, CT_exchangeability)
-        SeqHandler.__init__(self, self.data_len)
-
-    def __getitem__(self, idx):
-        x, y = BinnedHandlerTraining.__getitem__(self, idx)
-        seq = self.get_dna(range(self.batch_size*idx, self.batch_size*(idx+1)))
-        x = x.reshape((self.batch_size, -1))
-        x = np.hstack([x, seq])
-        return x, y
-
-
-class BinnedHandlerSeqImputing(BinnedHandlerImputing,
-                               SeqHandler):
+class BinnedHandlerSeqImputing(BinnedHandlerImputing, SeqHandler):
 
     def __init__(self, data_len, seg_len, CT_exchangeability=True):
         BinnedHandlerImputing.__init__(self, data_len, seg_len, CT_exchangeability)
@@ -262,25 +358,18 @@ class BinnedHandlerSeqImputing(BinnedHandlerImputing,
         return to_return
 
 
-def create_exchangeable_training_data(batch, drop_prob, data_len=None, CT_exchangeability=True):
-    x, y = zip(
-        *[create_exchangeable_training_obs(b, drop_prob, data_len, CT_exchangeability)
-          for b in batch]
-    )
-    return np.array(x), np.array(y)
+def create_exchangeable_training_data(batch_of_inputs, drop_prob, window_size, CT_exchangeability=True):
+    input_data = [create_exchangeable_training_obs(x, drop_prob, window_size, CT_exchangeability)
+          for x in batch_of_inputs]
+    
+    return np.array(input_data)
 
 
 # The input to this function is a single observation from the batch
-def create_exchangeable_training_obs(obs, drop_prob, data_len=None, CT_exchangeability=True):
-    if data_len is None:
-        data_len = obs.shape[-1]
+def create_exchangeable_training_obs(obs, drop_prob, window_size, CT_exchangeability=True):
+
+    # The dimensions of this tensor are (n x m x l)
     input_tensor = np.copy(obs)
-    # The dimensions of this np.array are (n x m x l)
-    start = data_len//2
-    end = start + obs.shape[-1] - data_len + 1
-    output = np.copy(input_tensor[:, :, start:end])
-    output = np.swapaxes(output, 1, 2)
-    output = output.flatten()
 
     # Randomly drop each of the NUM_CELL_TYPES x NUM_ASSAY_TYPES
     # experiments with probability drop_prob
@@ -303,4 +392,4 @@ def create_exchangeable_training_obs(obs, drop_prob, data_len=None, CT_exchangea
         input_tensor = np.swapaxes(input_tensor, 1, 2)
         input_tensor = np.swapaxes(input_tensor, 0, 2) 
 
-    return input_tensor, output
+    return input_tensor
