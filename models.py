@@ -100,18 +100,18 @@ def exchangeable_layer(x, patch_width, patch_depth,
 def seq_module(batches, width, height, depth,
                seq_filters, num_seq_features, seg_len,
                batchnorm, inputs):
-    x = Lambda(lambda x: x[:, :height*seg_len*depth])(inputs)
+    x = Lambda(lambda x: x[:, :height*2*seg_len*depth])(inputs)
     print('shape of x after taking first few columns= ', x.shape)
 
     x = Lambda(keras_reshape,
-               arguments={'shape': (batches, height, seg_len, depth)})(x)
+               arguments={'shape': (batches, height, 2*seg_len, depth)})(x)
     print('shape of x after reshape = ', x.shape)
 
-    seq = Lambda(lambda x: x[:, height*seg_len*depth:])(inputs)
+    seq = Lambda(lambda x: x[:, height*2*seg_len*depth:])(inputs)
     print('shape of seq = ', seq.shape)
 
     seq = Lambda(keras_reshape,
-                 arguments={'shape': (batches, 4, seg_len*25)})(seq)
+                 arguments={'shape': (batches, 4, 2*seg_len*25)})(seq)
     print('shape of seq after reshape = ', seq.shape)
 
     seq = Lambda(keras_transpose,
@@ -169,19 +169,19 @@ def create_exchangeable_seq_cnn(batches, width, height, depth,
     if seg_len is None:
         seg_len = width
 
-    input_shape = (batches, height*seg_len*depth) # + 25*4*seg_len)
+    input_shape = (batches, height*2*seg_len*depth + 25*4*2*seg_len)
     print('input_shape = ', input_shape)
 
     inputs = Input(batch_shape=input_shape)
     x = seq_module(batches, width, height, depth, seq_filters,
                    num_seq_features, seg_len, batchnorm, inputs)
 
-    real_width = width
-    print('real width = '+str(width))
+    real_width = 2*seg_len
+    print('real width = '+str(real_width))
 
     for filter_params in feature_filters:
         patch_width, patch_depth, dilate = filter_params
-                x = exchangeable_layer(x, patch_width, patch_depth, dilate, exch_func,
+        x = exchangeable_layer(x, patch_width, patch_depth, dilate, exch_func,
                                'valid', batchnorm)
 
         # Keep track of real width after each convolution
@@ -191,8 +191,6 @@ def create_exchangeable_seq_cnn(batches, width, height, depth,
 
     # In order to output exactly NUM_GENE_EXPRESSION_CELL_TYPES outputs
     # We have one filter at this step instead of NUM_ASSAY_TYPES filters
-    # However, since NUM_CELL_TYPES != NUM_GENE_EXPRESSION_CELL_TYPES
-    # We will have to enforce this by: TODO
     
     # For Regression:
     if(CT_exchangeability):
@@ -218,8 +216,6 @@ def create_exchangeable_seq_cnn(batches, width, height, depth,
     #                   padding='valid',
     #                   activation="sigmoid")(x)
 
-    x = Flatten()(x_mu)
-
     if density_network:
         if(CT_exchangeability):
             x_log_precision = Conv2D(NUM_ASSAY_TYPES,
@@ -232,7 +228,7 @@ def create_exchangeable_seq_cnn(batches, width, height, depth,
         x_log_precision = Flatten()(x_log_precision)
         x = Concatenate()([x_mu, x_log_precision])
     else:
-        x = x_mu
+        x = Flatten()(x_mu)
     
     print('shape of x after final convolution = ', x.shape)
     model = Model(inputs, x)

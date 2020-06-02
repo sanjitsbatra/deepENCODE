@@ -106,6 +106,8 @@ class BinnedHandler(Sequence):
         # by sampling random genomic loci, we can now use a list of genes
         self.gene_position = {}
         self.gene_expression = {}
+        cell_type_name = {}
+
         f_gene_expression = open(GENE_EXPRESSION_DATA, 'r')
         line_number = 0
         for line in f_gene_expression:
@@ -118,9 +120,15 @@ class BinnedHandler(Sequence):
                 continue
 
             chrom_name = vec[0][3:] # remove the chr prefix 
-            tss = int(vec[1]) / 25  # work at 25bp resolution
+         
+            # For now only load chromosome 21 gene expression
+            if(chrom_name != "21"):
+                print("Skipping because not chr21 gene expression")
+                continue
+	
+            tss = int( int(vec[1]) / 25 )  # work at 25bp resolution
             gene_name = vec[5].split(".")[0]
-            # gene_length = ( int(vec[2]) - int(vec[1]) ) / 25
+            # gene_length = int( ( int(vec[2]) - int(vec[1]) ) / 25 )
 
             # Initialize a gene expression vector containing NUM_CELL_TYPE
             # entries, with the cell types for which we don't have 
@@ -133,7 +141,7 @@ class BinnedHandler(Sequence):
             for col_i in range(6, len(vec)):
                 self.gene_position[gene_name] = (chrom_name, tss)
                 self.gene_expression[gene_name][cell_type_name[col_i]] = \
-                                                            float(vec[col_i])
+                                               np.log1p( float(vec[col_i]) )
 
         self.gene_names = self.gene_expression.keys()
 
@@ -157,30 +165,31 @@ class BinnedHandler(Sequence):
     #     start = idx if chr_idx == 0 else idx - self.tot_len_list[chr_idx - 1]
     #     return chrom, start
 
-    # def __len__(self):
-    #     return self.length
+    def __len__(self):
+        return 128*self.batch_size
 
     # This function needs to generate random genes
-    def __getitem__(self):
+    def __getitem__(self, idx):
         batch = []
 
         # randomly sample genes
         genes = random.sample(self.gene_names, self.batch_size)
 
-        for gene in genes:        
+        for gene in genes:       
             chrom, tss = self.gene_position[gene]
             gene_expression = self.gene_expression[gene]
 
             # save the gene_names, (cell_type x window_size x assay_type) 
-            batch.append([genes, self.load_gene_data(chrom, tss, self.window_size),
+            batch.append([gene, self.load_gene_data(chrom, tss, self.window_size),
                         gene_expression]) # and gene_expression values as list
-
+        
+        # print("Batch created", batch[0][0])
         return batch
 
     def load_gene_data(self, chrom, tss, window_size):
         return make_input_for_regression(NUM_CELL_TYPES,
                           NUM_ASSAY_TYPES,
-                          chrom,
+                          2*window_size,
                           self.indices[chrom],
                           self.data[chrom][:, tss-window_size:tss+window_size])
 
@@ -199,7 +208,6 @@ class SeqHandler(object):
             self.dna[chrom[3:]] = np.load(fname)
 
 
-
     def get_dna(self, gene_names):
         seq = []
         for gene in gene_names:
@@ -208,19 +216,22 @@ class SeqHandler(object):
             end = (tss + self.window_size) * 25
             this_seq = self.dna[chrom][max(start, 0):min(end, self.chrom_lens[chrom]*25)]
 
+            # print("Shape of this_seq before padding", len(this_seq))
             # Pad the input
             this_seq = np.pad(this_seq,
                               (max(0, 0-start), max(0, end - self.chrom_lens[chrom]*25)),
                               'constant',
                               constant_values=4)
+            # print("Shape of this_seq after padding", len(this_seq))
 
             output_seq = np.zeros((4, len(this_seq)))
 
             keep = this_seq < 4
+            # print("Now we are indexing with keep")
             output_seq[this_seq[keep], np.arange(len(this_seq))[keep]] = 1
 
-            # Output should be (_, 4) or (_, 1)
-            seq.append(output_seq)
+            # Output should be flattened because we unflatten in seq_module
+            seq.append(output_seq.flatten())
         
         return seq
 
@@ -246,8 +257,8 @@ class BinnedHandlerTraining(BinnedHandler):
  
         BinnedHandler.__init__(self, window_size, batch_size)
 
-    def __getitem__(self):
-        batch = BinnedHandler.__getitem__(self)
+    def __getitem__(self, idx):
+        batch = BinnedHandler.__getitem__(self, idx)
         
         gene_names = []
         inputs = []
@@ -283,14 +294,19 @@ class BinnedHandlerSeqTraining(BinnedHandlerTraining, SeqHandler):
         
         SeqHandler.__init__(self) 
 
-    def __getitem__(self):
-        gene_names, x, y = BinnedHandlerTraining.__getitem__(self)
+    def __getitem__(self, idx):
+        gene_names, x, y = BinnedHandlerTraining.__getitem__(self, idx)
 
         seq = self.get_dna(gene_names)
-        
+
+        # print("shape of x", x.shape, "shape of each seq", seq[0].shape)        
         x = x.reshape((self.batch_size, -1))
+        # print("shape of x after reshape", x.shape)  
+
         x = np.hstack([x, seq])
-        return x, y
+        # print("final shape of x with seq", x.shape)
+        # print("y shape", np.squeeze(np.asarray(y)).shape)
+        return x, np.squeeze(np.asarray(y)) # TODO fasten this
 
 
 class BinnedHandlerImputing(BinnedHandler):
@@ -377,12 +393,12 @@ def create_exchangeable_training_obs(obs, drop_prob, window_size, CT_exchangeabi
     mask = mask <= drop_prob
     mask = np.tile(mask, [input_tensor.shape[-1], 1, 1])
     mask = mask.transpose((1, 2, 0))
+    # print("Indexing into mask")
     input_tensor[mask] = -1
 
     # In both, input_feature and output, replace all nans
     # (denoting missing entries) with -1s
     input_tensor[np.isnan(input_tensor)] = -1
-    output[np.isnan(output)] = -1 
 
     if(CT_exchangeability):
         # switch the m and l dimensions to obtain a (n x l x m) tensor

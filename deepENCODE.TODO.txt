@@ -1,12 +1,9 @@
-deepENCODE TODO: 31 May 2020 
+deepENCODE TODO: 1 June 2020 
 
-1) grep for "Classification" to switch to it (Flags not implemented)
+1) Conditioning of Input and Output data
 
-2) Predict Gene Expression with batches at TSS only
+2) Y data creation convert to list comprehension and remove squeeze
 
-3) Remove seg_len because training data points are not large in number now.
+3) Remove __len__ function dependence on steps_per_epoch
 
-4) Change architecture to predict MSE on TPM across different cell types.
-
-5) Create evaluation scheme for model (with dropping out during prediction?).
-
+4) Set up evaluation
