@@ -244,7 +244,7 @@ class BinnedHandlerTraining(BinnedHandler):
                  window_size,
                  batch_size,
                  seg_len=None,
-                 drop_prob=0.5,
+                 drop_prob=0.25,
                  CT_exchangeability=True):
 
         if seg_len is None:
@@ -288,11 +288,12 @@ class BinnedHandlerSeqTraining(BinnedHandlerTraining, SeqHandler):
                  window_size,
                  batch_size,
                  seg_len=None,
-                 drop_prob=0.5,
+                 drop_prob=0.25,
                  CT_exchangeability=True):
 
         BinnedHandlerTraining.__init__(
-            self, window_size, batch_size, seg_len, drop_prob, CT_exchangeability)
+            self, window_size, batch_size, seg_len, drop_prob, 
+            CT_exchangeability)
         
         SeqHandler.__init__(self) 
 
@@ -311,69 +312,68 @@ class BinnedHandlerSeqTraining(BinnedHandlerTraining, SeqHandler):
         return x, np.squeeze(np.asarray(y)) # TODO fasten this
 
 
-class BinnedHandlerImputing(BinnedHandler):
+class BinnedHandlerPredicting(BinnedHandler):
 
-    def __init__(self, data_len, seg_len, CT_exchangeability=True):
-        BinnedHandler.__init__(self, data_len, 1)
-        self.seg_len = seg_len
+    def __init__(self,
+                 window_size,
+                 batch_size, 
+                 seg_len=None,
+                 drop_prob=0.25, 
+                 CT_exchangeability=True):
+
+        if seg_len is None:
+            seg_len = window_size
+        else:
+            print("seg_len should not be used!")
+            sys.exit(-1)
+
+        self.window_size = window_size
+        self.drop_prob = drop_prob
         self.CT_exchangeability = CT_exchangeability
-        self.chrom_list, self.tot_len_list = zip(*self.chrom_lens.items())
-        self.tot_len_list = np.array(self.tot_len_list, dtype=float)
-        self.tot_len_list -= self.data_len // 2
-        self.tot_len_list /= (self.seg_len - self.data_len + 1)
-        self.tot_len_list = np.ceil(self.tot_len_list).astype(int)
-        self.tot_len_list = np.cumsum(self.tot_len_list)
 
-    def idx_to_chrom_and_start(self, idx):
-        chrom, start = BinnedHandler.idx_to_chrom_and_start(self, idx)
-        start *= (self.seg_len - self.data_len + 1)
-        return chrom, start
+        BinnedHandler.__init__(self, window_size, 1)
+        
+    def __getitem__(self, idx):
+        batch = BinnedHandler.__getitem__(self, idx)
 
-    def __len__(self):
-        return self.tot_len_list[-1]
+        gene_names = []
+        inputs = []
+        outputs = []
+
+        for b in batch:
+            gene_names.append(b[0])
+            inputs.append(b[1])
+            outputs.append(b[2])
+
+        return gene_names, create_exchangeable_training_data(inputs,
+                                            drop_prob=self.drop_prob,
+                                            window_size=self.window_size,
+                        CT_exchangeability=self.CT_exchangeability), outputs
+
+
+class BinnedHandlerSeqPredicting(BinnedHandlerPredicting, SeqHandler):
+
+    def __init__(self, 
+                 window_size, 
+                 batch_size, 
+                 drop_prob=0.25,
+                 CT_exchangeability=True):
+
+        BinnedHandlerPredicting.__init__(
+            self, window_size, batch_size, seg_len, drop_prob, 
+            CT_exchangeability)
+
+        SeqHandler.__init__(self)
 
     def __getitem__(self, idx):
-        chrom, start = self.idx_to_chrom_and_start(idx)
-        end = start + self.seg_len
-        if end > self.data[chrom].shape[1]:
-            # For Regression
-            data = np.full((self.data[chrom].shape[0], self.seg_len), -1,
-                            dtype=np.float32)
+        gene_names, x, y = BinnedHandlerPredicting.__getitem__(self, idx)
+        
+        seq = self.get_dna(gene_names)
+        
+        x = x.reshape((self.batch_size, -1))
+        x = np.hstack([x, seq])
 
-            # For Classification
-            # data = np.full((self.data[chrom].shape[0], self.seg_len), -1,
-            #                dtype=np.int64)
-
-            data_we_have = self.data[chrom][:, start:]
-            data[:, :data_we_have.shape[1]] = data_we_have
-        else:
-            data = self.data[chrom][:, start:end]
-        batch = make_array_for_regression(NUM_CELL_TYPES,
-                           NUM_ASSAY_TYPES,
-                           self.seg_len,
-                           self.indices[chrom],
-                           data)
-        batch = np.expand_dims(batch, axis=0)
-        batch[np.isnan(batch)] = -1
-
-        if(self.CT_exchangeability):
-            return batch.transpose((0, 1, 3, 2))
-        else:
-            return batch.transpose((0, 2, 3, 1 ))
-
-
-class BinnedHandlerSeqImputing(BinnedHandlerImputing, SeqHandler):
-
-    def __init__(self, data_len, seg_len, CT_exchangeability=True):
-        BinnedHandlerImputing.__init__(self, data_len, seg_len, CT_exchangeability)
-        SeqHandler.__init__(self, seg_len)
-
-    def __getitem__(self, idx):
-        to_return = BinnedHandlerImputing.__getitem__(self, idx)
-        seq = self.get_dna([idx])
-        to_return = to_return.reshape((1, -1))
-        to_return = np.hstack([to_return, seq])
-        return to_return
+        return x, np.squeeze(np.asarray(y))
 
 
 def create_exchangeable_training_data(batch_of_inputs, drop_prob, window_size, CT_exchangeability=True):
