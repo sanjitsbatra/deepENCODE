@@ -34,7 +34,7 @@ for line in f_test:
 
 
 # Specify which chromosomes we will be training and testing on
-chroms = ['chr21'] # , 'chr5', 'chr14', 'chr2']
+chroms = ['chr1', 'chr2', 'chr3', 'chr4', 'chr5', 'chr11', 'chr12', 'chr21'] # , 'chr5', 'chr14', 'chr2']
 
 
 # First we create the Training and Testing directories

@@ -15,7 +15,7 @@ SEQ_DIR = '/scratch/sanjit/ENCODE_Imputation_Challenge/2_April_2020/Data/genome'
 BINNED_DATA_DIR = ('/scratch/sanjit/ENCODE_Imputation_Challenge/2_April_2020'
            '/Data/Training_Data')
 GENE_EXPRESSION_DATA = ('/scratch/sanjit/ENCODE_Imputation_Challenge/2_April_2020'
-            '/Data/Gene_Expression/gene_expression.tsv')
+            '/Data/Gene_Expression/GENE_EXPRESSION.NORMALIZED.tsv')
 
 NUM_CELL_TYPES = 51
 NUM_ASSAY_TYPES = 35
@@ -58,6 +58,8 @@ class BinnedHandler(Sequence):
         self.chrom_lens = {}
         self.indices = {}
 
+        chrom_list = ['chr1', 'chr2', 'chr3', 'chr4', 'chr5', 'chr11', 'chr12', 'chr21']
+
         for cell_type in range(1, NUM_CELL_TYPES + 1):
             for assay_type in range(1, NUM_ASSAY_TYPES + 1):
                 for chrom in [str(k) for k in range(1, 23)] + ['X']:
@@ -66,8 +68,8 @@ class BinnedHandler(Sequence):
                                                             chrom)
                     fname = join(BINNED_DATA_DIR, fname)
                     if isfile(fname):
-                        if chrom == '21':
-                            print('Loading',
+                        if "chr"+chrom in chrom_list:
+                            print("Loading chr", chrom,  
                                   fname.split('/')[-1].split('.')[0])
 
                         this_array = np.load(fname) 
@@ -121,9 +123,9 @@ class BinnedHandler(Sequence):
 
             chrom_name = vec[0][3:] # remove the chr prefix 
          
-            # For now only load chromosome 21 gene expression
-            if(chrom_name != "21"):
-                print("Skipping because not chr21 gene expression")
+            # Load only chromosomes whose epigenetics have been loaded
+            if("chr"+chrom_name not in chrom_list):
+                print("Skipping chr"+chrom_name+" gene expression")
                 continue
 	
             tss = int( int(vec[1]) / 25 )  # work at 25bp resolution
@@ -141,7 +143,7 @@ class BinnedHandler(Sequence):
             for col_i in range(6, len(vec)):
                 self.gene_position[gene_name] = (chrom_name, tss)
                 self.gene_expression[gene_name][cell_type_name[col_i]] = \
-                                               np.log1p( float(vec[col_i]) )
+                                               float(vec[col_i])
 
         self.gene_names = self.gene_expression.keys()
 
