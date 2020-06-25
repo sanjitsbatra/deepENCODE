@@ -12,19 +12,26 @@ import random, sys
 
 
 SEQ_DIR = '/scratch/sanjit/ENCODE_Imputation_Challenge/2_April_2020/Data/genome'
+
+# For Training
 BINNED_DATA_DIR = ('/scratch/sanjit/ENCODE_Imputation_Challenge/2_April_2020'
-           '/Data/Training_Data')
+             '/Data/Training_Data')
+
+# For Predicting
+# BINNED_DATA_DIR = ('/scratch/sanjit/ENCODE_Imputation_Challenge/2_April_2020'
+#            '/Data/Testing_Data')
+
 GENE_EXPRESSION_DATA = ('/scratch/sanjit/ENCODE_Imputation_Challenge/2_April_2020'
             '/Data/Gene_Expression/GENE_EXPRESSION.NORMALIZED.tsv')
 
-NUM_CELL_TYPES = 51
-NUM_ASSAY_TYPES = 35
+NUM_CELL_TYPES = 12
+NUM_ASSAY_TYPES = 7
 ALLOWED_CHROMS = set(['chr{}'.format(k) for k in list(range(1, 23)) + ['X']])
 
 
 # For converting p-values into classes for Classification
 def convert_to_classes(input_array, threshold):
-    return np.where(input_array > threshold, 1, 0)
+    return np.where(input_array > threshold, np.float32(1.0), np.float32(0.0))
     # return np.asarray([1 if x > threshold else 0 for x in input_array])
 
 
@@ -57,18 +64,24 @@ class BinnedHandler(Sequence):
         self.data = {}
         self.chrom_lens = {}
         self.indices = {}
+    
+        # For training
+        chrom_list = ['chr21']#, 'chr2', 'chr3', 'chr4', 'chr5', 'chr11', 'chr12', 'chr21']
 
-        chrom_list = ['chr1', 'chr2', 'chr3', 'chr4', 'chr5', 'chr11', 'chr12', 'chr21']
+        # For testing  
+        # chrom_list = ['chr6', 'chr7', 'chr8', 'chr9', 'chr10', 'chr13', 'chr14', 'chr22']
 
         for cell_type in range(1, NUM_CELL_TYPES + 1):
             for assay_type in range(1, NUM_ASSAY_TYPES + 1):
                 for chrom in [str(k) for k in range(1, 23)] + ['X']:
-                    fname = 'C{:02}M{:02}.chr{}.npy'.format(cell_type,
+                    fname = 'T{:02}A{:02}.chr{}.npy'.format(cell_type,
                                                             assay_type,
                                                             chrom)
                     fname = join(BINNED_DATA_DIR, fname)
                     if isfile(fname):
-                        if "chr"+chrom in chrom_list:
+                        if "chr"+chrom not in chrom_list:
+                            continue
+                        else:
                             print("Loading chr", chrom,  
                                   fname.split('/')[-1].split('.')[0])
 
@@ -76,11 +89,11 @@ class BinnedHandler(Sequence):
 			
                         # For Regression:
                         # Caution: We are working with log10(-log10 p-values ?)
-                        this_array = np.log1p(this_array)
+                        # this_array = np.log1p(this_array)
 
                         # For Classification:
                         # Convert -log10(p-values) into classes
-                        # this_array = convert_to_classes(this_array, 3)
+                        this_array = convert_to_classes(this_array, 5)
 
                         if chrom not in self.data:
                             self.data[chrom] = {}
@@ -90,6 +103,8 @@ class BinnedHandler(Sequence):
         print('...Stacking arrays')
 
         for chrom in self.data.keys():
+            print(chrom, "building arrays")
+
             indices, array = zip(*self.data[chrom].items())
 
             # shape is: (chrom_length/25, cell_types*assay_types)
@@ -97,18 +112,13 @@ class BinnedHandler(Sequence):
 
             # shape is: (cell_types*assay_types, 1)
             self.indices[chrom] = np.array(indices)
-
-
-
-        # # contains #chroms, chrom_lengths
-        # self.chrom_list, self.tot_len_list = zip(*self.chrom_lens.items())
-
+         
+        print("Beginning to parse Gene Expression now")
 
         # Instead of using idx to generate training data 
         # by sampling random genomic loci, we can now use a list of genes
         self.gene_position = {}
         self.gene_expression = {}
-        cell_type_name = {}
 
         f_gene_expression = open(GENE_EXPRESSION_DATA, 'r')
         line_number = 0
@@ -116,16 +126,11 @@ class BinnedHandler(Sequence):
             line_number += 1
             vec = line.rstrip("\n").split("\t")
 
-            if(line_number == 1):
-                for col_i in range(6, len(vec)):
-                    cell_type_name[col_i] = int(vec[col_i][1:3])
-                continue
-
             chrom_name = vec[0][3:] # remove the chr prefix 
          
             # Load only chromosomes whose epigenetics have been loaded
             if("chr"+chrom_name not in chrom_list):
-                print("Skipping chr"+chrom_name+" gene expression")
+                # print("Skipping chr"+chrom_name+" gene expression")
                 continue
 	
             tss = int( int(vec[1]) / 25 )  # work at 25bp resolution
@@ -140,35 +145,14 @@ class BinnedHandler(Sequence):
             # being able to transfer learn from the EIC network output
             self.gene_expression[gene_name] = np.full((NUM_CELL_TYPES, 1), 
                                                 -1.0, dtype=np.float32)
-            for col_i in range(6, len(vec)):
+            for col_i in range(6, 8):#len(vec)):
                 self.gene_position[gene_name] = (chrom_name, tss)
-                self.gene_expression[gene_name][cell_type_name[col_i]] = \
-                                               float(vec[col_i])
+                self.gene_expression[gene_name][col_i-6] = float(vec[col_i])
 
         self.gene_names = self.gene_expression.keys()
 
-        # ##################################################################
-        # # What is this for?
-        # self.data_len = data_len
-
-        # self.tot_len_list = np.array(self.tot_len_list) - self.data_len
-        # self.tot_len_list = np.cumsum(self.tot_len_list)
-        # # TODO: the following line will introduce some edge effects on the
-        # # final chromosome.
-        # self.length = self.tot_len_list[-1] // self.batch_size
-        # self.idx_map = np.arange(self.tot_len_list[-1])
-        # print(self.chrom_lens)
-        # ##################################################################
-
-    # # idx is a genome-wide (chromosome-concatenated index) 
-    # def idx_to_chrom_and_start(self, idx):
-    #     chr_idx = np.where(self.tot_len_list > idx)[0][0]
-    #     chrom = self.chrom_list[chr_idx]
-    #     start = idx if chr_idx == 0 else idx - self.tot_len_list[chr_idx - 1]
-    #     return chrom, start
-
     def __len__(self):
-        return 128*self.batch_size
+        return len(self.gene_names)
 
     # This function needs to generate random genes
     def __getitem__(self, idx):
@@ -331,7 +315,7 @@ class BinnedHandlerPredicting(BinnedHandler):
         self.drop_prob = drop_prob
         self.CT_exchangeability = CT_exchangeability
 
-        BinnedHandler.__init__(self, window_size, 1)
+        BinnedHandler.__init__(self, window_size, batch_size)
         
     def __getitem__(self, idx):
         batch = BinnedHandler.__getitem__(self, idx)
@@ -355,7 +339,8 @@ class BinnedHandlerSeqPredicting(BinnedHandlerPredicting, SeqHandler):
 
     def __init__(self, 
                  window_size, 
-                 batch_size, 
+                 batch_size,
+                 seg_len=None, 
                  drop_prob=0.25,
                  CT_exchangeability=True):
 

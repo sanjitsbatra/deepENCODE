@@ -1,18 +1,15 @@
 from __future__ import print_function
 from __future__ import division
+
 from keras.layers.normalization import BatchNormalization
-from keras.layers import Activation
-# from keras.layers.convolutional import Conv1D
-from keras.layers.convolutional import Conv2D
-from keras.layers import Flatten
-from keras.layers import Input
+from keras.layers import Activation, Flatten, Input, Concatenate, Lambda, Add
+from keras.layers.convolutional import Conv1D, Conv2D
 from keras.models import Model
-from keras.layers import Concatenate, Lambda, Add
 # from keras.losses import logcosh
 from keras import backend as K
 from data_loader import NUM_CELL_TYPES, NUM_ASSAY_TYPES
-from keras_genomics.layers.normalization import RevCompConv1DBatchNorm
-from keras_genomics.layers import RevCompConv1D
+# from keras_genomics.layers.normalization import RevCompConv1DBatchNorm
+# from keras_genomics.layers import RevCompConv1D
 
 
 def keras_nonneg_mean(input_x):
@@ -120,8 +117,8 @@ def seq_module(batches, width, height, depth,
 
     for filt in seq_filters:
         patch_width, patch_depth, dilate = filt
-        # seq = Conv1D(patch_depth,
-        seq = RevCompConv1D(patch_depth,
+        seq = Conv1D(patch_depth,
+        # seq = RevCompConv1D(patch_depth,
                             patch_width,
                             dilation_rate=dilate,
                             padding='same')(seq)
@@ -131,8 +128,8 @@ def seq_module(batches, width, height, depth,
         seq = Activation('relu')(seq)
         print('shape of seq after convolution ', filt, ' = ', seq.shape)
 
-    # seq = Conv1D(num_seq_features,
-    seq = RevCompConv1D(num_seq_features,
+    seq = Conv1D(num_seq_features,
+    # seq = RevCompConv1D(num_seq_features,
                         25,
                         strides=25,
                         padding='valid')(seq)
@@ -149,7 +146,8 @@ def seq_module(batches, width, height, depth,
     seq = Lambda(keras_tile, arguments={'height': height})(seq)
     print('shape of seq after tiling = ', seq.shape)
 
-    x = Concatenate()([x, seq])
+    #####################
+    x = seq #Concatenate()([x, seq])
     print('shape of x after concatenation with seq = ', x.shape)
     return x
 
@@ -192,6 +190,8 @@ def create_exchangeable_seq_cnn(batches, width, height, depth,
     # In order to output exactly NUM_GENE_EXPRESSION_CELL_TYPES outputs
     # We have one filter at this step instead of NUM_ASSAY_TYPES filters
     
+
+    ############### Is this correct?
     # For Regression:
     if(CT_exchangeability):
         x_mu = Conv2D(1, #NUM_ASSAY_TYPES,
@@ -228,7 +228,12 @@ def create_exchangeable_seq_cnn(batches, width, height, depth,
         x_log_precision = Flatten()(x_log_precision)
         x = Concatenate()([x_mu, x_log_precision])
     else:
-        x = Flatten()(x_mu)
+        # (None, 51, 1, 100)
+        # x_mu = Conv2D(1, (1,1), padding="same")(x_mu)
+
+        ####################### Can we skip the flatten here?
+        # x = Flatten()(x_mu)
+        pass
     
     print('shape of x after final convolution = ', x.shape)
     model = Model(inputs, x)
@@ -236,7 +241,7 @@ def create_exchangeable_seq_cnn(batches, width, height, depth,
 
 
 def customLoss(yTrue, yPred):
-    skip_indices = K.tf.where(K.tf.equal(yTrue, -1), K.tf.zeros_like(yTrue),
+    skip_indices = K.tf.where(K.tf.equal(yTrue, -1.0), K.tf.zeros_like(yTrue),
                               K.tf.ones_like(yTrue))
 
     # For Regression
