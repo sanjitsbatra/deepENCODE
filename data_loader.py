@@ -11,20 +11,22 @@ import random, sys
 # from multiprocessing import Pool
 
 
-SEQ_DIR = '/scratch/sanjit/ENCODE_Imputation_Challenge/2_April_2020/Data/genome'
+SEQ_DIR = '/Users/sbatra/Downloads/EIC/24_June_2020/genome'
 
 # For Training
-BINNED_DATA_DIR = ('/scratch/sanjit/ENCODE_Imputation_Challenge/2_April_2020'
-             '/Data/Training_Data')
+BINNED_DATA_DIR = ('/Users/sbatra/Downloads/EIC/24_June_2020'
+             '/Training_Data_2')
 
 # For Predicting
-# BINNED_DATA_DIR = ('/scratch/sanjit/ENCODE_Imputation_Challenge/2_April_2020'
-#            '/Data/Testing_Data')
+# BINNED_DATA_DIR = ('/Users/sbatra/Downloads/EIC/24_June_2020'
+#            '/Testing_Data')
 
-GENE_EXPRESSION_DATA = ('/scratch/sanjit/ENCODE_Imputation_Challenge/2_April_2020'
-            '/Data/Gene_Expression/GENE_EXPRESSION.NORMALIZED.tsv')
+GENE_EXPRESSION_DATA = ('/Users/sbatra/Downloads/EIC/24_June_2020'
+            '/GENE_EXPRESSION.NORMALIZED.tsv')
 
-NUM_CELL_TYPES = 12
+NUM_CELL_TYPES = 12 
+# DECREASING THIS TO LOWER THAN 12 LEADS TO MALLOC ERROR
+# Also T12 data seems to cause the same error!
 NUM_ASSAY_TYPES = 7
 ALLOWED_CHROMS = set(['chr{}'.format(k) for k in list(range(1, 23)) + ['X']])
 
@@ -143,11 +145,14 @@ class BinnedHandler(Sequence):
             # This is being done so that the custom loss function ignores
             # these -1 values while computing the MSE loss; while still 
             # being able to transfer learn from the EIC network output
+
+            self.gene_position[gene_name] = (chrom_name, tss)
             self.gene_expression[gene_name] = np.full((NUM_CELL_TYPES, 1), 
                                                 -1.0, dtype=np.float32)
-            for col_i in range(6, 8):#len(vec)):
-                self.gene_position[gene_name] = (chrom_name, tss)
-                self.gene_expression[gene_name][col_i-6] = float(vec[col_i])
+
+            for col_i in range(6, 7):# len(vec)):
+                # print(col_i-6, vec[col_i])
+                self.gene_expression[gene_name][col_i-6] = 1.0*col_i #float(vec[col_i])
 
         self.gene_names = self.gene_expression.keys()
 
@@ -376,16 +381,16 @@ def create_exchangeable_training_obs(obs, drop_prob, window_size, CT_exchangeabi
 
     # Randomly drop each of the NUM_CELL_TYPES x NUM_ASSAY_TYPES
     # experiments with probability drop_prob
-    mask = np.random.uniform(size=(NUM_CELL_TYPES, NUM_ASSAY_TYPES))
-    mask = mask <= drop_prob
-    mask = np.tile(mask, [input_tensor.shape[-1], 1, 1])
-    mask = mask.transpose((1, 2, 0))
+    # mask = np.random.uniform(size=(NUM_CELL_TYPES, NUM_ASSAY_TYPES))
+    # mask = mask <= drop_prob
+    # mask = np.tile(mask, [input_tensor.shape[-1], 1, 1])
+    # mask = mask.transpose((1, 2, 0))
     # print("Indexing into mask")
-    input_tensor[mask] = -1
+    # input_tensor[mask] = -1000
 
     # In both, input_feature and output, replace all nans
     # (denoting missing entries) with -1s
-    input_tensor[np.isnan(input_tensor)] = -1
+    input_tensor[np.isnan(input_tensor)] = -1000.0
 
     if(CT_exchangeability):
         # switch the m and l dimensions to obtain a (n x l x m) tensor

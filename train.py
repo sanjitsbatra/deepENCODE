@@ -24,7 +24,7 @@ def lr_scheduler(epoch):
 
 if __name__ == '__main__':
     batch_size = 8
-    window_size = 14 # => 2.5Kb window on each side line 171 of data_loader
+    window_size = 20 # => Length of window / 25 on each side line 171 of data_loader
     seg_len = None
     steps_per_epoch = 100  
     epochs = 100     

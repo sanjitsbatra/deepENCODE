@@ -16,9 +16,9 @@ if __name__ == '__main__':
 
     # maximum_likelihood_loss(y_true, y_pred, num_output)    
     trained_model = load_model(sys.argv[1],
-                                custom_objects={'customLoss': customLoss,
-                    'RevCompConv1D': keras_genomics.layers.RevCompConv1D,
-                    'RevCompConv1DBatchNorm': keras_genomics.layers.normalization.RevCompConv1DBatchNorm})
+                                custom_objects={'customLoss': customLoss})
+                    # 'RevCompConv1D': keras_genomics.layers.RevCompConv1D,
+                    # 'RevCompConv1DBatchNorm': keras_genomics.layers.normalization.RevCompConv1DBatchNorm})
 
     CT_exchangeability = True # True is what we used for EIC '19
                          #int(sys.argv[3]) > 0
@@ -26,7 +26,7 @@ if __name__ == '__main__':
     in_shape = trained_model.inputs[0].shape
     print("in_shape", in_shape)
 
-    window_size = 10 #int( int(in_shape[2]) / 2 ) 
+    window_size = 20 #int( int(in_shape[2]) / 2 ) 
     seg_len = None
     batch_size = int(in_shape[0])
 
@@ -54,9 +54,9 @@ if __name__ == '__main__':
 
         x, y = bwh[idx]
 
-        # print("Shape of x", x.shape, "shape of y", y.shape)
-        y_predicted = trained_model.predict(x)
-        # print("Shape of y_predicted", y_predicted.shape)                    
+        print("Shape of x", x.shape, "shape of y", y.shape)
+        y_predicted = np.squeeze(np.squeeze(trained_model.predict(x), axis=3), axis=2)
+        print("Shape of y_predicted", y_predicted.shape)                    
         yTrue.append(y)
         yPred.append(y_predicted)
 
@@ -72,5 +72,5 @@ if __name__ == '__main__':
     for i in range(yTrue.shape[1]):
         for j in range(yPred.shape[1]):
             cor = spearmanr(yTrue[:,i], yPred[:,j])[0]
-            print(np.mean(yTrue[:,i]), i, j, cor)
+            print(np.mean(yTrue[:,i]), np.mean(yPred[:,j]), i, j, cor)
 
