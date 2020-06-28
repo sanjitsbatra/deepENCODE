@@ -64,34 +64,42 @@ def keras_squeeze(input_x):
 def exchangeable_layer(x, patch_width, patch_depth,
                        dilate, exch_func, padding, batchnorm):
     dilate = (1, dilate)
-    x_equiv = Conv2D(patch_depth,
+
+    # Permutation-Invariance
+    x_inv = Conv2D(patch_depth,
                      (1, patch_width),
                      dilation_rate=dilate,
                      padding=padding)(x)
     if batchnorm:
-        x_equiv = BatchNormalization()(x_equiv)
-    x_equiv = Activation('relu')(x_equiv)
+        x_inv = BatchNormalization()(x_inv)
+    x_inv = Activation('relu')(x_inv)
 
+    print("Shape of Permutation-Invariance before Max", x_inv.shape)
     if exch_func == 'max':
-        x_equiv = Lambda(keras_max)(x_equiv)
+        x_inv = Lambda(keras_max)(x_inv)
     elif exch_func == 'nonneg_mean':
-        x_equiv = Lambda(keras_nonneg_mean)(x_equiv)
+        x_inv = Lambda(keras_nonneg_mean)(x_inv)
     else:
         raise NotImplementedError(
             'exch_func must either be "max" or "nonneg_mean"')
-    x_equiv = Lambda(keras_tile,
-                     arguments={'height': int(x.shape[1])})(x_equiv)
+    print("Shape of Permutation-Invariance after Max", x_inv.shape)
 
-    x_inv = Conv2D(patch_depth,
+    x_inv = Lambda(keras_tile,
+                     arguments={'height': int(x.shape[1])})(x_inv)
+    print("Shape of Permutation-Invariance after tile", x_inv.shape)
+
+    # Permutation-Equivariance
+    x_equiv = Conv2D(patch_depth,
                    (1, patch_width),
                    dilation_rate=dilate,
                    padding=padding)(x)
 
     if batchnorm:
-        x_inv = BatchNormalization()(x_inv)
-    x_inv = Activation('relu')(x_inv)
+        x_equiv = BatchNormalization()(x_equiv)
+    x_equiv = Activation('relu')(x_equiv)
+    print("Shape of Permutation-Equivariance after Conv2D", x_equiv.shape)
 
-    x = Concatenate()([x_inv, x_equiv])
+    x = x_inv # Concatenate()([x_inv, x_equiv])
 
     return x
 
@@ -99,6 +107,9 @@ def exchangeable_layer(x, patch_width, patch_depth,
 def seq_module(batches, width, height, depth,
                seq_filters, num_seq_features, seg_len,
                batchnorm, inputs):
+
+    print("height", height, "2*seg_len", 2*seg_len, "depth", depth) 
+
     x = Lambda(lambda x: x[:, :height*2*seg_len*depth])(inputs)
     print('shape of x after taking first few columns= ', x.shape)
 
@@ -195,10 +206,11 @@ def create_exchangeable_seq_cnn(batches, width, height, depth,
     
 
     print("Before combining, shape of x and seq are", x.shape, seq.shape)
-    x = Concatenate()([x, seq])
+    x = x # seq #Concatenate()([x, seq])
     print("After combinging, the shape of x is", x.shape)
     
-    print(x)
+    print("Right before final Conv2D per row, real_width", real_width)
+    print("And the shape of x is", x.shape)
 
     ############### Is this correct?
     # For Regression:
@@ -212,6 +224,8 @@ def create_exchangeable_seq_cnn(batches, width, height, depth,
               (1, real_width),
                       padding='valid',
               activation="linear")(x)
+
+    	
 
     # For Classification
     # if(CT_exchangeability):
@@ -244,7 +258,7 @@ def create_exchangeable_seq_cnn(batches, width, height, depth,
         x = x_mu #K.squeeze(K.squeeze(x_mu, axis=3), axis=2) # Flatten()(x_mu)
         # pass
     
-    print(x)
+    # print(x)
 
     print('shape of x after final convolution = ', x.shape)
     model = Model(inputs, x)

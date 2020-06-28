@@ -11,22 +11,42 @@ import random, sys
 # from multiprocessing import Pool
 
 
-SEQ_DIR = '/Users/sbatra/Downloads/EIC/24_June_2020/genome'
+# For Mac
+# SEQ_DIR = '/Users/sbatra/Downloads/EIC/24_June_2020/genome'
 
 # For Training
-BINNED_DATA_DIR = ('/Users/sbatra/Downloads/EIC/24_June_2020'
-             '/Training_Data_2')
+# BINNED_DATA_DIR = ('/Users/sbatra/Downloads/EIC/24_June_2020'
+#              '/Training_Data_2')
 
 # For Predicting
 # BINNED_DATA_DIR = ('/Users/sbatra/Downloads/EIC/24_June_2020'
 #            '/Testing_Data')
 
-GENE_EXPRESSION_DATA = ('/Users/sbatra/Downloads/EIC/24_June_2020'
-            '/GENE_EXPRESSION.NORMALIZED.tsv')
+# GENE_EXPRESSION_DATA = ('/Users/sbatra/Downloads/EIC/24_June_2020'
+#             '/GENE_EXPRESSION.NORMALIZED.tsv')
+
+
+### For Clytius
+SEQ_DIR = '/scratch/sanjit/ENCODE_Imputation_Challenge/2_April_2020/Data/genome'
+
+# For Training
+BINNED_DATA_DIR = ('/scratch/sanjit/ENCODE_Imputation_Challenge/2_April_2020'
+             '/Data/Training_Data')
+
+# For Predicting
+# BINNED_DATA_DIR = ('/scratch/sanjit/ENCODE_Imputation_Challenge/2_April_2020'
+#            '/Data/Testing_Data')
+
+GENE_EXPRESSION_DATA = ('/scratch/sanjit/ENCODE_Imputation_Challenge/2_April_2020'
+            '/Data/Gene_Expression/GENE_EXPRESSION.NORMALIZED.tsv')
+
 
 NUM_CELL_TYPES = 12 
 # DECREASING THIS TO LOWER THAN 12 LEADS TO MALLOC ERROR
+# This should now be fixed by the 28 June 2020 correction in the
+# make_input_for_regression function 
 # Also T12 data seems to cause the same error!
+
 NUM_ASSAY_TYPES = 7
 ALLOWED_CHROMS = set(['chr{}'.format(k) for k in list(range(1, 23)) + ['X']])
 
@@ -38,14 +58,26 @@ def convert_to_classes(input_array, threshold):
 
 
 @njit('float32[:, :, :](int64, int64, int64, int64[:, :], float32[:, :])')
-def make_input_for_regression(i, j, k, indices, data):
-    to_return = np.full((i, j, k), np.nan, dtype=np.float32) 
+def make_input_for_regression(num_cell_types, num_assay_types, 
+                              twice_window_size, indices, data):
+  
+    to_return = np.full((num_cell_types, num_assay_types, twice_window_size), 
+                         np.nan, dtype=np.float32) 
     
-    for i in range(indices.shape[0]):
-        to_return[indices[i, 0], indices[i, 1], :] = data[i, :]
+    for ii in range(indices.shape[0]):
+        if ( (indices[ii, 0] - 1 >= num_cell_types) or
+             (indices[ii, 1] - 1>= num_assay_types) ):
+            print("The self indices are more than the size of the array!")
+            continue
+
+        to_return[indices[ii, 0] - 1, indices[ii, 1] - 1, :] = data[ii, :]
+        # 28 June 2020
+        # Added -1 to the above line because 12 was an index causing segfaults!
+
     return to_return
 
 
+# If we ever switch back to this, clone corrections from above function
 @njit('int64[:, :, :](int64, int64, int64, int64[:, :], int64[:, :])')
 def make_input_for_classification(i, j, k, indices, data):
     # Replacing np.nan by -1 in the second argument in the line below
@@ -109,12 +141,16 @@ class BinnedHandler(Sequence):
 
             indices, array = zip(*self.data[chrom].items())
 
-            # shape is: (chrom_length/25, cell_types*assay_types)
+            # shape is: (cell_types*assay_types, chrom_length / 25)
             self.data[chrom] = np.vstack(array)
+            print("Shape of self.data", chrom, "is ", self.data[chrom].shape)
 
-            # shape is: (cell_types*assay_types, 1)
+            # shape is: (cell_types*assay_types, 2)
             self.indices[chrom] = np.array(indices)
-         
+            print("Shape of self.indices", chrom, "is",
+                  self.indices[chrom].shape)     
+            print("self.indices", self.indices[chrom])
+
         print("Beginning to parse Gene Expression now")
 
         # Instead of using idx to generate training data 
@@ -150,7 +186,7 @@ class BinnedHandler(Sequence):
             self.gene_expression[gene_name] = np.full((NUM_CELL_TYPES, 1), 
                                                 -1.0, dtype=np.float32)
 
-            for col_i in range(6, 7):# len(vec)):
+            for col_i in range(6, len(vec)):
                 # print(col_i-6, vec[col_i])
                 self.gene_expression[gene_name][col_i-6] = 1.0*col_i #float(vec[col_i])
 
@@ -170,7 +206,7 @@ class BinnedHandler(Sequence):
             chrom, tss = self.gene_position[gene]
             gene_expression = self.gene_expression[gene]
 
-            # save the gene_names, (cell_type x window_size x assay_type) 
+            # save the gene_names, (cell_type x assay_type x 2*window_wize) 
             batch.append([gene, self.load_gene_data(chrom, tss, self.window_size),
                         gene_expression]) # and gene_expression values as list
         

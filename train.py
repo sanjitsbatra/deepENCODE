@@ -73,7 +73,7 @@ if __name__ == '__main__':
         seq_filters=seq_filters_input,
         num_seq_features=num_seq_filters,
         seg_len=seg_len,
-        exch_func='max',
+        exch_func='nonneg_mean',
         batchnorm=True,
         density_network=density_network,
         CT_exchangeability=CT_exchangeability)
@@ -87,7 +87,7 @@ if __name__ == '__main__':
         seq_filters=seq_filters_input,
         num_seq_features=num_seq_filters,
         seg_len=seg_len,
-        exch_func='max',
+        exch_func='nonneg_mean',
         batchnorm=True,
         density_network=density_network,
         CT_exchangeability=CT_exchangeability)
