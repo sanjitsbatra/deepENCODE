@@ -96,10 +96,10 @@ def exchangeable_layer(x, patch_width, patch_depth,
 
     if batchnorm:
         x_equiv = BatchNormalization()(x_equiv)
-    x_equiv = Activation('relu')(x_equiv)
+    x_equiv = Activation('linear')(x_equiv)
     print("Shape of Permutation-Equivariance after Conv2D", x_equiv.shape)
 
-    x = x_inv # Concatenate()([x_inv, x_equiv])
+    x = x_equiv # Concatenate()([x_inv, x_equiv])
 
     return x
 
@@ -191,6 +191,8 @@ def create_exchangeable_seq_cnn(batches, width, height, depth,
     real_width = 2*seg_len
     print('real width = '+str(real_width))
 
+    print("Before Convs: Shape of x", x.shape, "Shape of seq", seq.shape)
+
     for filter_params in feature_filters:
         patch_width, patch_depth, dilate = filter_params
         x = exchangeable_layer(x, patch_width, patch_depth, dilate, exch_func,
@@ -266,11 +268,12 @@ def create_exchangeable_seq_cnn(batches, width, height, depth,
 
 
 def customLoss(yTrue, yPred):
-    skip_indices = K.tf.where(K.tf.equal(yTrue, -1.0), K.tf.zeros_like(yTrue),
+    skip_indices = K.tf.where(K.tf.equal(yTrue, -1000.0), K.tf.zeros_like(yTrue),
                               K.tf.ones_like(yTrue))
 
     # For Regression
-    return K.mean(skip_indices * K.square(yTrue - yPred))
+    loss = K.square(yTrue - yPred) * skip_indices
+    return K.sum(loss, axis=-1) / K.sum(skip_indices, axis=-1)
 
     # For Classification (TODO: categorical crossentropy reports a bug)
     # loss = K.binary_crossentropy(yTrue, yPred) * skip_indices  
@@ -280,7 +283,7 @@ def customLoss(yTrue, yPred):
 def maximum_likelihood_loss(y_true, y_pred, num_output):
     mu = y_pred[:, :num_output]
     log_precision = y_pred[:, num_output:] / 1e3
-    skip_indices = K.tf.where(K.tf.equal(y_true, -1.0),
+    skip_indices = K.tf.where(K.tf.equal(y_true, -1000.0),
                               K.tf.zeros_like(y_true),
                               K.tf.ones_like(y_true))
     like = skip_indices * (K.square(y_true - mu) * K.exp(log_precision) -

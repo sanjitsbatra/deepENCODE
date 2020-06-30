@@ -26,7 +26,7 @@ if __name__ == '__main__':
     in_shape = trained_model.inputs[0].shape
     print("in_shape", in_shape)
 
-    window_size = 20 #int( int(in_shape[2]) / 2 ) 
+    window_size = 90 #int( int(in_shape[2]) / 2 ) 
     seg_len = None
     batch_size = int(in_shape[0])
 
@@ -67,10 +67,16 @@ if __name__ == '__main__':
     np.savetxt("yPred.txt", yPred, fmt='%1.4f')
     print("Shape of yTrue", yTrue.shape, "shape of yPred", yPred.shape)
 
+    print("yTrue[10,:]", yTrue[10,:])
+    print("yPred[10,:]", yPred[10,:])
+
+    print("yTrue[20,:]", yTrue[20,:])
+    print("yPred[20,:]", yPred[20,:])
+
     # Compute some statistics on yTrue and yPred
     assert(yTrue.shape[0] == yPred.shape[0])
     for i in range(yTrue.shape[1]):
         for j in range(yPred.shape[1]):
             cor = spearmanr(yTrue[:,i], yPred[:,j])[0]
             print(np.mean(yTrue[:,i]), np.mean(yPred[:,j]), i, j, cor)
-
+            print(np.std(yTrue[:,i]), np.std(yPred[:,j]), i, j, cor)

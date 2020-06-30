@@ -41,13 +41,14 @@ GENE_EXPRESSION_DATA = ('/scratch/sanjit/ENCODE_Imputation_Challenge/2_April_202
             '/Data/Gene_Expression/GENE_EXPRESSION.NORMALIZED.tsv')
 
 
-NUM_CELL_TYPES = 12 
-# DECREASING THIS TO LOWER THAN 12 LEADS TO MALLOC ERROR
-# This should now be fixed by the 28 June 2020 correction in the
-# make_input_for_regression function 
-# Also T12 data seems to cause the same error!
 
+# DECREASING NUM_CELL_TYPES TO LOWER THAN 12 LEADS TO MALLOC ERROR
+# Also T12 data seems to cause the same error!
+# These errors should now be fixed by the 28 June 2020 correction in the
+# make_input_for_regression function 
+NUM_CELL_TYPES = 12 
 NUM_ASSAY_TYPES = 7
+
 ALLOWED_CHROMS = set(['chr{}'.format(k) for k in list(range(1, 23)) + ['X']])
 
 
@@ -121,11 +122,11 @@ class BinnedHandler(Sequence):
 
                         this_array = np.load(fname) 
 			
-                        # For Regression:
+                        # For keeping the epigenetic features continuous
                         # Caution: We are working with log10(-log10 p-values ?)
                         # this_array = np.log1p(this_array)
 
-                        # For Classification:
+                        # For binarizing the epigenetic features
                         # Convert -log10(p-values) into classes
                         this_array = convert_to_classes(this_array, 5)
 
@@ -143,13 +144,13 @@ class BinnedHandler(Sequence):
 
             # shape is: (cell_types*assay_types, chrom_length / 25)
             self.data[chrom] = np.vstack(array)
-            print("Shape of self.data", chrom, "is ", self.data[chrom].shape)
+            # print("Shape of self.data", chrom, "is ", self.data[chrom].shape)
 
             # shape is: (cell_types*assay_types, 2)
             self.indices[chrom] = np.array(indices)
-            print("Shape of self.indices", chrom, "is",
-                  self.indices[chrom].shape)     
-            print("self.indices", self.indices[chrom])
+            # print("Shape of self.indices", chrom, "is",
+            #        self.indices[chrom].shape)     
+            # print("self.indices", self.indices[chrom])
 
         print("Beginning to parse Gene Expression now")
 
@@ -184,7 +185,7 @@ class BinnedHandler(Sequence):
 
             self.gene_position[gene_name] = (chrom_name, tss)
             self.gene_expression[gene_name] = np.full((NUM_CELL_TYPES, 1), 
-                                                -1.0, dtype=np.float32)
+                                                -1000.0, dtype=np.float32)
 
             for col_i in range(6, len(vec)):
                 # print(col_i-6, vec[col_i])
@@ -269,7 +270,7 @@ class BinnedHandlerTraining(BinnedHandler):
                  window_size,
                  batch_size,
                  seg_len=None,
-                 drop_prob=0.25,
+                 drop_prob=0.00,
                  CT_exchangeability=True):
 
         if seg_len is None:
@@ -313,7 +314,7 @@ class BinnedHandlerSeqTraining(BinnedHandlerTraining, SeqHandler):
                  window_size,
                  batch_size,
                  seg_len=None,
-                 drop_prob=0.25,
+                 drop_prob=0.00,
                  CT_exchangeability=True):
 
         BinnedHandlerTraining.__init__(
@@ -325,7 +326,17 @@ class BinnedHandlerSeqTraining(BinnedHandlerTraining, SeqHandler):
     def __getitem__(self, idx):
         gene_names, x, y = BinnedHandlerTraining.__getitem__(self, idx)
 
+
+        # Create artificial epigenetic data ############
+        x = np.asarray([np.full((2*self.window_size, NUM_ASSAY_TYPES), i) 
+                        for i in range(6, 6 + NUM_CELL_TYPES)])
+        x = np.repeat(x[np.newaxis,...], self.batch_size, axis=0)
+
+
         seq = self.get_dna(gene_names)
+ 
+        # Display the input epigenetic data
+	# print(np.mean(x[4,:,:,:],axis=1))
 
         # print("shape of x", x.shape, "shape of each seq", seq[0].shape)        
         x = x.reshape((self.batch_size, -1))
@@ -334,7 +345,7 @@ class BinnedHandlerSeqTraining(BinnedHandlerTraining, SeqHandler):
         x = np.hstack([x, seq])
         # print("final shape of x with seq", x.shape)
         # print("y shape", np.squeeze(np.asarray(y)).shape)
-        return x, np.squeeze(np.asarray(y)) # TODO fasten this
+        return x, np.squeeze(np.asarray(y)) # TODO make this faster
 
 
 class BinnedHandlerPredicting(BinnedHandler):
@@ -343,7 +354,7 @@ class BinnedHandlerPredicting(BinnedHandler):
                  window_size,
                  batch_size, 
                  seg_len=None,
-                 drop_prob=0.25, 
+                 drop_prob=0.00, 
                  CT_exchangeability=True):
 
         if seg_len is None:
@@ -382,7 +393,7 @@ class BinnedHandlerSeqPredicting(BinnedHandlerPredicting, SeqHandler):
                  window_size, 
                  batch_size,
                  seg_len=None, 
-                 drop_prob=0.25,
+                 drop_prob=0.00,
                  CT_exchangeability=True):
 
         BinnedHandlerPredicting.__init__(
@@ -402,15 +413,20 @@ class BinnedHandlerSeqPredicting(BinnedHandlerPredicting, SeqHandler):
         return x, np.squeeze(np.asarray(y))
 
 
-def create_exchangeable_training_data(batch_of_inputs, drop_prob, window_size, CT_exchangeability=True):
-    input_data = [create_exchangeable_training_obs(x, drop_prob, window_size, CT_exchangeability)
-          for x in batch_of_inputs]
+def create_exchangeable_training_data(batch_of_inputs, drop_prob, window_size,
+                                      CT_exchangeability=True):
+    input_data = ([create_exchangeable_training_obs(x, 
+                                                   drop_prob, 
+                                                   window_size, 
+                                                   CT_exchangeability)
+                                                   for x in batch_of_inputs])
     
     return np.array(input_data)
 
 
 # The input to this function is a single observation from the batch
-def create_exchangeable_training_obs(obs, drop_prob, window_size, CT_exchangeability=True):
+def create_exchangeable_training_obs(obs, drop_prob, window_size, 
+                                     CT_exchangeability=True):
 
     # The dimensions of this tensor are (n x m x l)
     input_tensor = np.copy(obs)
@@ -432,7 +448,7 @@ def create_exchangeable_training_obs(obs, drop_prob, window_size, CT_exchangeabi
         # switch the m and l dimensions to obtain a (n x l x m) tensor
         input_tensor = np.swapaxes(input_tensor, 1, 2)
     else:
-        # If assay-type exchangeability, then obtain a (m x l x n) tensor instead
+        # If assay-type exchangeability, then obtain a (m x l x n) tensor
         input_tensor = np.swapaxes(input_tensor, 1, 2)
         input_tensor = np.swapaxes(input_tensor, 0, 2) 
 

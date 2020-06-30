@@ -8,7 +8,13 @@ from models import customLoss, maximum_likelihood_loss
 from keras.callbacks import ModelCheckpoint, LearningRateScheduler
 import sys
 import os
+from keras import backend as K
+import numpy as np
+# import keract # requires python3
 
+import os
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' 
+import tensorflow as tf
 
 NUM_CPU_THREADS = 5
 
@@ -24,7 +30,7 @@ def lr_scheduler(epoch):
 
 if __name__ == '__main__':
     batch_size = 8
-    window_size = 20 # => Length of window / 25 on each side line 171 of data_loader
+    window_size = 90 # => Length of window / 25 on each side line 171 of data_loader
     seg_len = None
     steps_per_epoch = 100  
     epochs = 100     
@@ -73,7 +79,7 @@ if __name__ == '__main__':
         seq_filters=seq_filters_input,
         num_seq_features=num_seq_filters,
         seg_len=seg_len,
-        exch_func='nonneg_mean',
+        exch_func='max',
         batchnorm=True,
         density_network=density_network,
         CT_exchangeability=CT_exchangeability)
@@ -87,7 +93,7 @@ if __name__ == '__main__':
         seq_filters=seq_filters_input,
         num_seq_features=num_seq_filters,
         seg_len=seg_len,
-        exch_func='nonneg_mean',
+        exch_func='max',
         batchnorm=True,
         density_network=density_network,
         CT_exchangeability=CT_exchangeability)
@@ -106,6 +112,8 @@ if __name__ == '__main__':
 
     print(model.summary())
 
+    # print(model.layers)
+
     run_name = sys.argv[1]
     if not os.path.exists(run_name):
         os.mkdir(run_name)
@@ -115,6 +123,48 @@ if __name__ == '__main__':
     lr_schedule = LearningRateScheduler(lr_scheduler)
     callbacks_list = [lr_schedule, checkpoint]
 
+    DEBUG_LAST_LAYER = 0
+    if(DEBUG_LAST_LAYER == 1):
+   
+        # This has demonstrated (29 June 2020) that:
+        # 1) With x_equiv channels, the untrained model outputs different 
+        # values for different cell types
+        # 2) and that with x_inv, the untrained model outputs identical 
+        # values for different cell types
+
+        # print("training round")
+        # keras_function = K.function([model.input], [model.layers[-2].output])
+        # print(keras_function([np.full((12,40,7), 1.0), 1]))
+
+        example_input = np.asarray(
+                        [np.full((40, 7), i) for i in range(6+1,6+13)])
+        example_input = example_input.reshape(-1)
+        print("example_input shape", example_input.shape)
+
+        example_seq_input = np.zeros((1000, 4))
+        example_seq_input = example_seq_input.reshape(-1)
+        print("example_seq_input shape", example_seq_input.shape)
+
+        example_input = np.hstack([example_input, example_seq_input])
+        print("concatenated shape", example_input.shape)
+   
+        example_input = np.expand_dims(example_input, axis = 0)
+        print("final shape", example_input.shape)
+
+        print("Conv2D_11 layer", model.get_layer('conv2d_11'))
+
+        print(model.predict(example_input))
+
+
+        # activations = keract.get_activations(model, 
+        #                                     example_input,  
+        #                                    layer_name='conv2d_11',
+        #                                    auto_compile=True)
+        # [print(k, '->', v.shape, '- Numpy array') for (k, v) in activations.items()]
+
+        sys.exit(-4)
+
+
     # We then train with this batch of data
     model.fit_generator(generator=bwh,
                         steps_per_epoch=steps_per_epoch,
@@ -123,6 +173,8 @@ if __name__ == '__main__':
                         use_multiprocessing=False)
                         # workers=NUM_CPU_THREADS,
                         # max_queue_size=100)
+  
+
 
     print('Training has completed! Exiting')
     os._exit(1)
