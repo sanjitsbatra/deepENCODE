@@ -13,6 +13,7 @@ from keras import backend as K
 from data_loader import NUM_CELL_TYPES, NUM_ASSAY_TYPES
 # from keras_genomics.layers.normalization import RevCompConv1DBatchNorm
 # from keras_genomics.layers import RevCompConv1D
+import numpy
 
 def keras_nonneg_mean(input_x):
     num_nonneg = K.tf.math.reduce_sum(
@@ -96,10 +97,10 @@ def exchangeable_layer(x, patch_width, patch_depth,
 
     if batchnorm:
         x_equiv = BatchNormalization()(x_equiv)
-    x_equiv = Activation('linear')(x_equiv)
+    x_equiv = Activation('relu')(x_equiv) # relu is much better than linear
     print("Shape of Permutation-Equivariance after Conv2D", x_equiv.shape)
 
-    x = x_equiv # Concatenate()([x_inv, x_equiv])
+    x = Concatenate()([x_inv, x_equiv])
 
     return x
 
@@ -165,7 +166,6 @@ def seq_module(batches, width, height, depth,
     print('shape of seq at the end of processing it is = ', seq.shape)
     return x, seq
 
-
 def create_exchangeable_seq_cnn(batches, width, height, depth,
                                 feature_filters=((11, 64, 1),
                                                  (11, 64, 1)),
@@ -214,6 +214,13 @@ def create_exchangeable_seq_cnn(batches, width, height, depth,
     print("Right before final Conv2D per row, real_width", real_width)
     print("And the shape of x is", x.shape)
 
+    # x = K.print_tensor(x, message="Before final Conv2D")
+    # tf.print(x)
+    # print(K.get_value(x))
+    # print(x.numpy()[0, 0, :, 0])
+    # x_val = K.eval(x)
+    # print(x_val)
+
     ############### Is this correct?
     # For Regression:
     if(CT_exchangeability):
@@ -257,7 +264,8 @@ def create_exchangeable_seq_cnn(batches, width, height, depth,
         # x_mu = Conv2D(1, (1,1), padding="same")(x_mu)
 
         ####################### Can we skip the flatten here?
-        x = x_mu #K.squeeze(K.squeeze(x_mu, axis=3), axis=2) # Flatten()(x_mu)
+        # Flatten IS essential: 30 June 2020
+        x = Flatten()(x_mu) #K.squeeze(K.squeeze(x_mu, axis=3), axis=2) # Flatten()(x_mu)
         # pass
     
     # print(x)

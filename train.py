@@ -30,10 +30,10 @@ def lr_scheduler(epoch):
 
 if __name__ == '__main__':
     batch_size = 8
-    window_size = 90 # => Length of window / 25 on each side line 171 of data_loader
+    window_size = 200 # => Length of window / 25 on each side line 171 of data_loader
     seg_len = None
     steps_per_epoch = 100  
-    epochs = 100     
+    epochs = 200     
 
     num_conv = int(sys.argv[2])
     num_seq_conv = int(sys.argv[3])
@@ -123,8 +123,22 @@ if __name__ == '__main__':
     lr_schedule = LearningRateScheduler(lr_scheduler)
     callbacks_list = [lr_schedule, checkpoint]
 
+    TRAIN_FLAG = 1
+    if(TRAIN_FLAG == 1):
+        # We then train with this batch of data
+        model.fit_generator(generator=bwh,
+                            steps_per_epoch=steps_per_epoch,
+                            epochs=epochs,
+                            callbacks=callbacks_list,
+                            use_multiprocessing=False)
+                            # workers=NUM_CPU_THREADS,
+                            # max_queue_size=100)
+  
+
+
     DEBUG_LAST_LAYER = 0
     if(DEBUG_LAST_LAYER == 1):
+
    
         # This has demonstrated (29 June 2020) that:
         # 1) With x_equiv channels, the untrained model outputs different 
@@ -136,24 +150,35 @@ if __name__ == '__main__':
         # keras_function = K.function([model.input], [model.layers[-2].output])
         # print(keras_function([np.full((12,40,7), 1.0), 1]))
 
+        inp = model.input
+        outputs = [layer.output for layer in [model.get_layer('lambda_2')]]
+        functor = K.function([inp, K.learning_phase()], outputs ) 
+
         example_input = np.asarray(
-                        [np.full((40, 7), i) for i in range(6+1,6+13)])
+                        [np.full((2*window_size, NUM_ASSAY_TYPES), i) 
+                         for i in range(6,6+NUM_CELL_TYPES)])
         example_input = example_input.reshape(-1)
         print("example_input shape", example_input.shape)
 
-        example_seq_input = np.zeros((1000, 4))
+        example_seq_input = np.zeros((25*2*window_size, 4))
         example_seq_input = example_seq_input.reshape(-1)
         print("example_seq_input shape", example_seq_input.shape)
 
         example_input = np.hstack([example_input, example_seq_input])
         print("concatenated shape", example_input.shape)
    
-        example_input = np.expand_dims(example_input, axis = 0)
+        example_input = np.repeat(example_input[np.newaxis,...], 
+                                  batch_size, axis=0)
         print("final shape", example_input.shape)
 
-        print("Conv2D_11 layer", model.get_layer('conv2d_11'))
+        print("Conv2D_1 layer", model.get_layer('conv2d_1'))
+
+        output_1 = np.asarray(functor([example_input, 1.]))
+        print(output_1.shape)
+        print(output_1[0, 0, 0, :, 0])
 
         print(model.predict(example_input))
+
 
 
         # activations = keract.get_activations(model, 
@@ -162,18 +187,7 @@ if __name__ == '__main__':
         #                                    auto_compile=True)
         # [print(k, '->', v.shape, '- Numpy array') for (k, v) in activations.items()]
 
-        sys.exit(-4)
-
-
-    # We then train with this batch of data
-    model.fit_generator(generator=bwh,
-                        steps_per_epoch=steps_per_epoch,
-                        epochs=epochs,
-                        callbacks=callbacks_list,
-                        use_multiprocessing=False)
-                        # workers=NUM_CPU_THREADS,
-                        # max_queue_size=100)
-  
+        
 
 
     print('Training has completed! Exiting')

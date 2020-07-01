@@ -124,11 +124,11 @@ class BinnedHandler(Sequence):
 			
                         # For keeping the epigenetic features continuous
                         # Caution: We are working with log10(-log10 p-values ?)
-                        # this_array = np.log1p(this_array)
+                        this_array = np.log1p(this_array)
 
                         # For binarizing the epigenetic features
                         # Convert -log10(p-values) into classes
-                        this_array = convert_to_classes(this_array, 5)
+                        # this_array = convert_to_classes(this_array, 5)
 
                         if chrom not in self.data:
                             self.data[chrom] = {}
@@ -189,7 +189,7 @@ class BinnedHandler(Sequence):
 
             for col_i in range(6, len(vec)):
                 # print(col_i-6, vec[col_i])
-                self.gene_expression[gene_name][col_i-6] = 1.0*col_i #float(vec[col_i])
+                self.gene_expression[gene_name][col_i-6] = float(vec[col_i]) # 1.0*col_i
 
         self.gene_names = self.gene_expression.keys()
 
@@ -328,14 +328,14 @@ class BinnedHandlerSeqTraining(BinnedHandlerTraining, SeqHandler):
 
 
         # Create artificial epigenetic data ############
-        x = np.asarray([np.full((2*self.window_size, NUM_ASSAY_TYPES), i) 
-                        for i in range(6, 6 + NUM_CELL_TYPES)])
-        x = np.repeat(x[np.newaxis,...], self.batch_size, axis=0)
+        # x = np.asarray([np.full((2*self.window_size, NUM_ASSAY_TYPES), i) 
+        #                 for i in range(6, 6 + NUM_CELL_TYPES)])
+        # x = np.repeat(x[np.newaxis,...], self.batch_size, axis=0)
 
 
         seq = self.get_dna(gene_names)
  
-        # Display the input epigenetic data
+        # Display the input epigenetic data (mean-ed across the positions)
 	# print(np.mean(x[4,:,:,:],axis=1))
 
         # print("shape of x", x.shape, "shape of each seq", seq[0].shape)        
@@ -403,8 +403,13 @@ class BinnedHandlerSeqPredicting(BinnedHandlerPredicting, SeqHandler):
         SeqHandler.__init__(self)
 
     def __getitem__(self, idx):
-        gene_names, x, y = BinnedHandlerPredicting.__getitem__(self, idx)
-        
+        gene_names, x, y = BinnedHandlerPredicting.__getitem__(self, idx)        
+
+        # Create artificial epigenetic data ############
+        # x = np.asarray([np.full((2*self.window_size, NUM_ASSAY_TYPES), i) 
+        #                 for i in range(6, 6 + NUM_CELL_TYPES)])
+        # x = np.repeat(x[np.newaxis,...], self.batch_size, axis=0)
+
         seq = self.get_dna(gene_names)
         
         x = x.reshape((self.batch_size, -1))

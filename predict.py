@@ -26,7 +26,7 @@ if __name__ == '__main__':
     in_shape = trained_model.inputs[0].shape
     print("in_shape", in_shape)
 
-    window_size = 90 #int( int(in_shape[2]) / 2 ) 
+    window_size = 200 #int( int(in_shape[2]) / 2 ) 
     seg_len = None
     batch_size = int(in_shape[0])
 
@@ -54,8 +54,11 @@ if __name__ == '__main__':
 
         x, y = bwh[idx]
 
+        # print(x[0, 1:100])
+
         print("Shape of x", x.shape, "shape of y", y.shape)
-        y_predicted = np.squeeze(np.squeeze(trained_model.predict(x), axis=3), axis=2)
+        # y_predicted = np.squeeze(np.squeeze(trained_model.predict(x), axis=3), axis=2)
+        y_predicted = trained_model.predict(x)
         print("Shape of y_predicted", y_predicted.shape)                    
         yTrue.append(y)
         yPred.append(y_predicted)
