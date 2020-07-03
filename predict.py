@@ -17,19 +17,18 @@ if __name__ == '__main__':
     # maximum_likelihood_loss(y_true, y_pred, num_output)    
     trained_model = load_model(sys.argv[1],
                                 custom_objects={'customLoss': customLoss})
-                    # 'RevCompConv1D': keras_genomics.layers.RevCompConv1D,
-                    # 'RevCompConv1DBatchNorm': keras_genomics.layers.normalization.RevCompConv1DBatchNorm})
-
-    CT_exchangeability = True # True is what we used for EIC '19
-                         #int(sys.argv[3]) > 0
+    # 'RevCompConv1D': keras_genomics.layers.RevCompConv1D,
+    # 'RevCompConv1DBatchNorm': 
+    #       keras_genomics.layers.normalization.RevCompConv1DBatchNorm})
 
     in_shape = trained_model.inputs[0].shape
-    print("in_shape", in_shape)
-
-    window_size = 200 #int( int(in_shape[2]) / 2 ) 
-    seg_len = None
     batch_size = int(in_shape[0])
+    window_size = int(sys.argv[2]) 
+    CT_exchangeability = True # True is what we used for EIC '19
+    seg_len = None
 
+    print("Input shape", in_shape, "Batch size", batch_size,
+          "Window size", window_size)
 
     # Don't dropout any epigenetic tracks at prediction time
     bwh = BinnedHandlerSeqPredicting(window_size, batch_size, 
@@ -50,18 +49,18 @@ if __name__ == '__main__':
             print('We have predicted the gene expression of',
                   idx * batch_size, 'genes. Progress: ',
                   ((idx * batch_size) * 100.0) / 2*len_bwh, '%')
+
         idx += 1
 
         x, y = bwh[idx]
-
         # print(x[0, 1:100])
 
         print("Shape of x", x.shape, "shape of y", y.shape)
-        # y_predicted = np.squeeze(np.squeeze(trained_model.predict(x), axis=3), axis=2)
-        y_predicted = trained_model.predict(x)
-        print("Shape of y_predicted", y_predicted.shape)                    
         yTrue.append(y)
+        
+        y_predicted = trained_model.predict(x, batch_size=batch_size)
         yPred.append(y_predicted)
+        print("Shape of y_predicted", y_predicted.shape)                    
 
     # Now we output yTrue and yPred
     yTrue = np.vstack(yTrue)
@@ -83,3 +82,5 @@ if __name__ == '__main__':
             cor = spearmanr(yTrue[:,i], yPred[:,j])[0]
             print(np.mean(yTrue[:,i]), np.mean(yPred[:,j]), i, j, cor)
             print(np.std(yTrue[:,i]), np.std(yPred[:,j]), i, j, cor)
+
+    print("Finished predicting!")

@@ -31,15 +31,14 @@ SEQ_DIR = '/scratch/sanjit/ENCODE_Imputation_Challenge/2_April_2020/Data/genome'
 
 # For Training
 BINNED_DATA_DIR = ('/scratch/sanjit/ENCODE_Imputation_Challenge/2_April_2020'
-             '/Data/Training_Data')
+                   '/Data/Training_Data')
 
 # For Predicting
 # BINNED_DATA_DIR = ('/scratch/sanjit/ENCODE_Imputation_Challenge/2_April_2020'
-#            '/Data/Testing_Data')
+#                    '/Data/Testing_Data')
 
 GENE_EXPRESSION_DATA = ('/scratch/sanjit/ENCODE_Imputation_Challenge/2_April_2020'
             '/Data/Gene_Expression/GENE_EXPRESSION.NORMALIZED.tsv')
-
 
 
 # DECREASING NUM_CELL_TYPES TO LOWER THAN 12 LEADS TO MALLOC ERROR
@@ -101,10 +100,12 @@ class BinnedHandler(Sequence):
         self.indices = {}
     
         # For training
-        chrom_list = ['chr21']#, 'chr2', 'chr3', 'chr4', 'chr5', 'chr11', 'chr12', 'chr21']
+        chrom_list = ['chr1' , 'chr2', 'chr3', 'chr4', 'chr5', 
+                      'chr11', 'chr12', 'chr21']
 
         # For testing  
-        # chrom_list = ['chr6', 'chr7', 'chr8', 'chr9', 'chr10', 'chr13', 'chr14', 'chr22']
+        # chrom_list = ['chr6', 'chr7', 'chr8', 'chr9', 'chr10', 
+        #               'chr13', 'chr14', 'chr22']
 
         for cell_type in range(1, NUM_CELL_TYPES + 1):
             for assay_type in range(1, NUM_ASSAY_TYPES + 1):
@@ -189,7 +190,7 @@ class BinnedHandler(Sequence):
 
             for col_i in range(6, len(vec)):
                 # print(col_i-6, vec[col_i])
-                self.gene_expression[gene_name][col_i-6] = float(vec[col_i]) # 1.0*col_i
+                self.gene_expression[gene_name][col_i-6] = float(vec[col_i])
 
         self.gene_names = self.gene_expression.keys()
 
@@ -208,8 +209,10 @@ class BinnedHandler(Sequence):
             gene_expression = self.gene_expression[gene]
 
             # save the gene_names, (cell_type x assay_type x 2*window_wize) 
-            batch.append([gene, self.load_gene_data(chrom, tss, self.window_size),
-                        gene_expression]) # and gene_expression values as list
+            # and gene expression values as a list
+            batch.append([gene, 
+                          self.load_gene_data(chrom, tss, self.window_size),
+                          gene_expression])
         
         # print("Batch created", batch[0][0])
         return batch
@@ -242,14 +245,16 @@ class SeqHandler(object):
             chrom, tss = self.gene_position[gene]
             start = (tss - self.window_size) * 25
             end = (tss + self.window_size) * 25
-            this_seq = self.dna[chrom][max(start, 0):min(end, self.chrom_lens[chrom]*25)]
+            this_seq = self.dna[chrom][max(start, 0):min(end, 
+                                                self.chrom_lens[chrom]*25)]
 
             # print("Shape of this_seq before padding", len(this_seq))
             # Pad the input
             this_seq = np.pad(this_seq,
-                              (max(0, 0-start), max(0, end - self.chrom_lens[chrom]*25)),
-                              'constant',
-                              constant_values=4)
+                              (max(0, 0-start), 
+                               max(0, end - self.chrom_lens[chrom]*25)),
+                               'constant',
+                               constant_values=4)
             # print("Shape of this_seq after padding", len(this_seq))
 
             output_seq = np.zeros((4, len(this_seq)))
@@ -332,11 +337,10 @@ class BinnedHandlerSeqTraining(BinnedHandlerTraining, SeqHandler):
         #                 for i in range(6, 6 + NUM_CELL_TYPES)])
         # x = np.repeat(x[np.newaxis,...], self.batch_size, axis=0)
 
-
         seq = self.get_dna(gene_names)
  
         # Display the input epigenetic data (mean-ed across the positions)
-	# print(np.mean(x[4,:,:,:],axis=1))
+        # print(np.mean(x[4,:,:,:],axis=1))
 
         # print("shape of x", x.shape, "shape of each seq", seq[0].shape)        
         x = x.reshape((self.batch_size, -1))

@@ -29,46 +29,44 @@ def lr_scheduler(epoch):
 
 
 if __name__ == '__main__':
-    batch_size = 8
-    window_size = 200 # => Length of window / 25 on each side line 171 of data_loader
+
+    # Setup model parameters
     seg_len = None
+
+    batch_size = 64
+    epochs = 100     
     steps_per_epoch = 100  
-    epochs = 200     
 
-    num_conv = int(sys.argv[2])
-    num_seq_conv = int(sys.argv[3])
-    num_filters = int(sys.argv[4])
+    run_name_prefix = sys.argv[1]
+    window_size = int(sys.argv[2]) # => Length of window / 25 on each side
+    num_filters = int(sys.argv[3])
+    run_name = run_name_prefix+"_"+str(window_size)+"_"+str(num_filters)
+
+    convolution_patch_width = 11
     model_type_flag = 'Regression' # 'Classification'
-    drop_probability = float(sys.argv[5])
+    drop_probability = 0.00
+    CT_exchangeability = True # True is what we used for EIC19
 
-    num_seq_filters = int(sys.argv[6])
-    CT_exchangeability = int(sys.argv[7]) > 0 # True is what we used for EIC19
- 
-    # This keeps obtaining a random batch of data
-    # bwh = BinnedHandlerTraining(window_size, batch_size)
+    # Fix conv_length and num_filters to 4 or 8? and change dilation rate
+    epigenetic_dilations =  [1, 1, 1, 2, 2, 2, 4, 4, 4, 8] 
+    sequence_dilations = [1, 2, 4, 8, 16, 32, 64, 128, 228, 256, 256]
+
+    feature_filters_input = [[convolution_patch_width, 
+                              num_filters, epigenetic_dilations[i]]
+                              for i in range(len(epigenetic_dilations))]
+
+    seq_filters_input = [[convolution_patch_width, 
+                              num_filters, sequence_dilations[i]]
+                              for i in range(len(sequence_dilations))]
+
+    # Keras fit generator through this class
     bwh = BinnedHandlerSeqTraining(window_size,
                                    batch_size,
                                    seg_len=seg_len,
                                    drop_prob=drop_probability,
                                    CT_exchangeability=CT_exchangeability)
 
-    
-    # TODO: what to print since len function isn't implemented
-    # print(len(bwh))
-
-    # Check to make sure this wasn't accidentally True
-    density_network = False
-    if model_type_flag == 'Regression':
-        density_network = False
-    elif model_type_flag == 'Classification':
-        density_network = False
-    else:
-        assert model_type_flag == 'density'
-
-    # Fix conv_length and num_filters to 4 or 8? and change dilation rate
-    feature_filters_input = [[7, num_filters, 1]]*num_conv
-    seq_filters_input = [[7, num_filters, 1]]*num_seq_conv
-
+    # Initialize model
     if(CT_exchangeability):
         model = create_exchangeable_seq_cnn(
         batch_size,
@@ -77,11 +75,11 @@ if __name__ == '__main__':
         NUM_ASSAY_TYPES,
         feature_filters=feature_filters_input,
         seq_filters=seq_filters_input,
-        num_seq_features=num_seq_filters,
+        num_seq_features=num_filters,
         seg_len=seg_len,
         exch_func='max',
         batchnorm=True,
-        density_network=density_network,
+        density_network=False,
         CT_exchangeability=CT_exchangeability)
     else:
         model = create_exchangeable_seq_cnn(
@@ -91,30 +89,22 @@ if __name__ == '__main__':
         NUM_CELL_TYPES,
         feature_filters=feature_filters_input,
         seq_filters=seq_filters_input,
-        num_seq_features=num_seq_filters,
+        num_seq_features=num_filters,
         seg_len=seg_len,
         exch_func='max',
         batchnorm=True,
-        density_network=density_network,
+        density_network=False,
         CT_exchangeability=CT_exchangeability)
         
+    # Compile model with custom MSE loss that skips missing entries
     opt = Adam(lr=1e-3)
-    if density_network:
-        def loss(a, b):
-            num_output = ((seg_len - window_size + 1)
-                          * NUM_CELL_TYPES
-                          * NUM_ASSAY_TYPES)
-            return maximum_likelihood_loss(a, b, num_output)
+    model.compile(loss=customLoss, optimizer=opt)
 
-        model.compile(loss=loss, optimizer=opt)
-    else:
-        model.compile(loss=customLoss, optimizer=opt)
-
+    # Display model
     print(model.summary())
-
     # print(model.layers)
 
-    run_name = sys.argv[1]
+    # Setup paths and callbacks
     if not os.path.exists(run_name):
         os.mkdir(run_name)
     print('Created ', str(run_name), ' directory')
@@ -123,6 +113,7 @@ if __name__ == '__main__':
     lr_schedule = LearningRateScheduler(lr_scheduler)
     callbacks_list = [lr_schedule, checkpoint]
 
+    # Train model
     TRAIN_FLAG = 1
     if(TRAIN_FLAG == 1):
         # We then train with this batch of data
@@ -134,8 +125,7 @@ if __name__ == '__main__':
                             # workers=NUM_CPU_THREADS,
                             # max_queue_size=100)
   
-
-
+    # Special module created to debug layer-wise outputs
     DEBUG_LAST_LAYER = 0
     if(DEBUG_LAST_LAYER == 1):
 
@@ -186,8 +176,6 @@ if __name__ == '__main__':
         #                                    layer_name='conv2d_11',
         #                                    auto_compile=True)
         # [print(k, '->', v.shape, '- Numpy array') for (k, v) in activations.items()]
-
-        
 
 
     print('Training has completed! Exiting')
