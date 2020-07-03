@@ -14,6 +14,13 @@ from scipy.stats import spearmanr, pearsonr
 
 if __name__ == '__main__':
 
+    # Don't dropout any epigenetic tracks at prediction time
+    batch_size = 64
+    window_size = int(sys.argv[2])     
+    bwh = BinnedHandlerSeqPredicting(window_size, batch_size, 
+                                     drop_prob = 0, 
+                                     CT_exchangeability=True)
+
     for model_number in range(10, 101, 10):
 
         # maximum_likelihood_loss(y_true, y_pred, num_output)    
@@ -25,17 +32,12 @@ if __name__ == '__main__':
 
         in_shape = trained_model.inputs[0].shape
         batch_size = int(in_shape[0])
-        window_size = int(sys.argv[2]) 
         CT_exchangeability = True # True is what we used for EIC '19
         seg_len = None
 
         print("Input shape", in_shape, "Batch size", batch_size,
               "Window size", window_size)
 
-        # Don't dropout any epigenetic tracks at prediction time
-        bwh = BinnedHandlerSeqPredicting(window_size, batch_size, 
-                                         drop_prob = 0, 
-                                         CT_exchangeability=CT_exchangeability)
         print('Beginning prediction')
 
         yTrue = []
