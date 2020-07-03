@@ -30,12 +30,12 @@ import random, sys
 SEQ_DIR = '/scratch/sanjit/ENCODE_Imputation_Challenge/2_April_2020/Data/genome'
 
 # For Training
-BINNED_DATA_DIR = ('/scratch/sanjit/ENCODE_Imputation_Challenge/2_April_2020'
-                   '/Data/Training_Data')
+# BINNED_DATA_DIR = ('/scratch/sanjit/ENCODE_Imputation_Challenge/2_April_2020'
+#                    '/Data/Training_Data')
 
 # For Predicting
-# BINNED_DATA_DIR = ('/scratch/sanjit/ENCODE_Imputation_Challenge/2_April_2020'
-#                    '/Data/Testing_Data')
+BINNED_DATA_DIR = ('/scratch/sanjit/ENCODE_Imputation_Challenge/2_April_2020'
+                   '/Data/Testing_Data')
 
 GENE_EXPRESSION_DATA = ('/scratch/sanjit/ENCODE_Imputation_Challenge/2_April_2020'
             '/Data/Gene_Expression/GENE_EXPRESSION.NORMALIZED.tsv')
@@ -100,12 +100,12 @@ class BinnedHandler(Sequence):
         self.indices = {}
     
         # For training
-        chrom_list = ['chr1' , 'chr2', 'chr3', 'chr4', 'chr5', 
-                      'chr11', 'chr12', 'chr21']
+        # chrom_list = ['chr1' , 'chr2', 'chr3', 'chr4', 'chr5', 
+        #               'chr11', 'chr12', 'chr21']
 
         # For testing  
-        # chrom_list = ['chr6', 'chr7', 'chr8', 'chr9', 'chr10', 
-        #               'chr13', 'chr14', 'chr22']
+        chrom_list = ['chr6', 'chr7', 'chr8', 'chr9', 'chr10', 
+                      'chr13', 'chr14', 'chr22']
 
         for cell_type in range(1, NUM_CELL_TYPES + 1):
             for assay_type in range(1, NUM_ASSAY_TYPES + 1):
