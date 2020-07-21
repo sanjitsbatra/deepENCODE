@@ -30,12 +30,12 @@ import random, sys
 SEQ_DIR = '/scratch/sanjit/ENCODE_Imputation_Challenge/2_April_2020/Data/genome'
 
 # For Training
-# BINNED_DATA_DIR = ('/scratch/sanjit/ENCODE_Imputation_Challenge/2_April_2020'
-#                    '/Data/Training_Data')
+BINNED_DATA_DIR = ('/scratch/sanjit/ENCODE_Imputation_Challenge/2_April_2020'
+                   '/Data/Training_Data')
 
 # For Predicting
-BINNED_DATA_DIR = ('/scratch/sanjit/ENCODE_Imputation_Challenge/2_April_2020'
-                   '/Data/Testing_Data')
+# BINNED_DATA_DIR = ('/scratch/sanjit/ENCODE_Imputation_Challenge/2_April_2020'
+#                    '/Data/Testing_Data')
 
 GENE_EXPRESSION_DATA = ('/scratch/sanjit/ENCODE_Imputation_Challenge/2_April_2020'
             '/Data/Gene_Expression/GENE_EXPRESSION.NORMALIZED.tsv')
@@ -57,7 +57,7 @@ def convert_to_classes(input_array, threshold):
     # return np.asarray([1 if x > threshold else 0 for x in input_array])
 
 
-@njit('float32[:, :, :](int64, int64, int64, int64[:, :], float32[:, :])')
+@njit('float32[:, :, :](int64, int64, int64, int64[:, :], float64[:, :])')
 def make_input_for_regression(num_cell_types, num_assay_types, 
                               twice_window_size, indices, data):
   
@@ -98,14 +98,14 @@ class BinnedHandler(Sequence):
         self.data = {}
         self.chrom_lens = {}
         self.indices = {}
-    
-        # For training
-        # chrom_list = ['chr1' , 'chr2', 'chr3', 'chr4', 'chr5', 
-        #               'chr11', 'chr12', 'chr21']
 
-        # For testing  
-        chrom_list = ['chr6', 'chr7', 'chr8', 'chr9', 'chr10', 
-                      'chr13', 'chr14', 'chr22']
+        # For training
+        chrom_list = ['chr2'] #, 'chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 
+                      # 'chr8', 'chr9', 'chr10', 'chr11', 'chr12', 'chr21']
+
+        # For testing
+        # chrom_list = ['chr13', 'chr14', 'chr15', 'chr16', 'chr17', 'chr18', 
+        #                'chr19', 'chr20', 'chr22', 'chrX']
 
         for cell_type in range(1, NUM_CELL_TYPES + 1):
             for assay_type in range(1, NUM_ASSAY_TYPES + 1):
@@ -125,11 +125,15 @@ class BinnedHandler(Sequence):
 			
                         # For keeping the epigenetic features continuous
                         # Caution: We are working with log10(-log10 p-values ?)
-                        this_array = np.log1p(this_array)
+                        # this_array = np.log1p(this_array)
+
+                        # Instead of taking the log10 of -log10 p-values
+                        # We can perform arcsinh(-log10 p-values - 3)
+                        this_array = np.arcsinh(this_array - 3)
 
                         # For binarizing the epigenetic features
                         # Convert -log10(p-values) into classes
-                        # this_array = convert_to_classes(this_array, 5)
+                        # this_array = convert_to_classes(this_array, 3)
 
                         if chrom not in self.data:
                             self.data[chrom] = {}
@@ -143,7 +147,7 @@ class BinnedHandler(Sequence):
 
             indices, array = zip(*self.data[chrom].items())
 
-            # shape is: (cell_types*assay_types, chrom_length / 25)
+            # shape is: (cell_types*assay_types, chrom_length / 100)
             self.data[chrom] = np.vstack(array)
             # print("Shape of self.data", chrom, "is ", self.data[chrom].shape)
 
@@ -173,9 +177,9 @@ class BinnedHandler(Sequence):
                 # print("Skipping chr"+chrom_name+" gene expression")
                 continue
 	
-            tss = int( int(vec[1]) / 25 )  # work at 25bp resolution
+            tss = int( int(vec[1]) / 100 )  # work at 100bp resolution
             gene_name = vec[5].split(".")[0]
-            # gene_length = int( ( int(vec[2]) - int(vec[1]) ) / 25 )
+            # gene_length = int( ( int(vec[2]) - int(vec[1]) ) / 100 )
 
             # Initialize a gene expression vector containing NUM_CELL_TYPE
             # entries, with the cell types for which we don't have 
@@ -243,16 +247,16 @@ class SeqHandler(object):
         seq = []
         for gene in gene_names:
             chrom, tss = self.gene_position[gene]
-            start = (tss - self.window_size) * 25
-            end = (tss + self.window_size) * 25
+            start = (tss - self.window_size) * 100
+            end = (tss + self.window_size) * 100
             this_seq = self.dna[chrom][max(start, 0):min(end, 
-                                                self.chrom_lens[chrom]*25)]
+                                                self.chrom_lens[chrom]*100)]
 
             # print("Shape of this_seq before padding", len(this_seq))
             # Pad the input
             this_seq = np.pad(this_seq,
                               (max(0, 0-start), 
-                               max(0, end - self.chrom_lens[chrom]*25)),
+                               max(0, end - self.chrom_lens[chrom]*100)),
                                'constant',
                                constant_values=4)
             # print("Shape of this_seq after padding", len(this_seq))

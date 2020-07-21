@@ -8,7 +8,7 @@ import subprocess
 
 
 # Read in the names of all files
-data_path = '/scratch/sanjit/ENCODE_Imputation_Challenge/2_April_2020/Data/NewNomenclature_Binned_25bp_ENCODE_Training_and_Validation_Data/'
+data_path = '/scratch/sanjit/ENCODE_Imputation_Challenge/2_April_2020/Data/100bp_12_7_Data_20_July_2020/'
 
 all_data = []
 for (dirpath, dirnames, filenames) in os.walk(data_path):
@@ -18,10 +18,10 @@ for (dirpath, dirnames, filenames) in os.walk(data_path):
 
 # Specify which chromosomes we will be training and testing on
 # Used for training
-train_chroms = ['chr1', 'chr2', 'chr3', 'chr4', 'chr5', 'chr11', 'chr12', 'chr21']
+train_chroms = ['chr1', 'chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 'chr8', 'chr9', 'chr10', 'chr11', 'chr12', 'chr21']
 
 # Used for testing
-test_chroms = ['chr6', 'chr7', 'chr8', 'chr9', 'chr10', 'chr13', 'chr14', 'chr22']
+test_chroms = ['chr13', 'chr14', 'chr15', 'chr16', 'chr17', 'chr18', 'chr19', 'chr20', 'chr22', 'chrX']
 
 # First we create the Training and Testing directories
 subprocess.Popen(("mkdir -p Training_Data").split(), stdout=subprocess.PIPE).communicate()

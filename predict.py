@@ -15,13 +15,13 @@ from scipy.stats import spearmanr, pearsonr
 if __name__ == '__main__':
 
     # Don't dropout any epigenetic tracks at prediction time
-    batch_size = 64
-    window_size = int(sys.argv[2])     
+    batch_size = 16
+    window_size = int(sys.argv[1])     
     bwh = BinnedHandlerSeqPredicting(window_size, batch_size, 
                                      drop_prob = 0, 
                                      CT_exchangeability=True)
 
-    for model_number in range(10, 101, 10):
+    for model_number in range(10, 41, 5): # range(50, 91, 2):
 
         # maximum_likelihood_loss(y_true, y_pred, num_output)    
         trained_model = load_model("model-"+str(model_number)+".hdf5",

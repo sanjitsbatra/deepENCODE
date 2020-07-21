@@ -89,7 +89,7 @@ def exchangeable_layer(x, patch_width, patch_depth,
                      padding=padding)(x)
     if batchnorm:
         x_inv = BatchNormalization()(x_inv)
-    x_inv = Activation('relu')(x_inv)
+    x_inv = Activation('elu')(x_inv)
 
     print("Shape of Permutation-Invariance before Max", x_inv.shape)
 
@@ -116,12 +116,12 @@ def exchangeable_layer(x, patch_width, patch_depth,
 
     if batchnorm:
         x_equiv = BatchNormalization()(x_equiv)
-    x_equiv = Activation('relu')(x_equiv) # relu is much better than linear
+    x_equiv = Activation('elu')(x_equiv) # relu is much better than linear
     print("Shape of Permutation-Equivariance after Conv2D", x_equiv.shape)
 
     # Concatenate Permutation-Invariant and Permutation-Equivariant
     # Potentially having only equivariant seems to train better: 1 JULY 2020
-    x = x_equiv # Concatenate()([x_inv, x_equiv])
+    x = Concatenate()([x_equiv, x_inv])
 
     return x
 
@@ -146,28 +146,28 @@ def seq_module(batches, width, height, depth,
     print('shape of x after reshape = ', x.shape)
 
     # Subset the rest of the columns to obtain the one-hot encoded sequence:
-    # (BATCH_SIZE, 4 x 25 x 2*WINDOW_SIZE)
+    # (BATCH_SIZE, 4 x 100 x 2*WINDOW_SIZE)
     seq = Lambda(lambda x: x[:, height*2*seg_len*depth:])(inputs)
     print('shape of seq = ', seq.shape)
 
     # Reshape this data to get 4 channels for the sequence in the shape:
-    # (BATCH_SIZE, 4, 25 x 2*WINDOW_SIZE)  
+    # (BATCH_SIZE, 4, 100 x 2*WINDOW_SIZE)  
     seq = Lambda(keras_reshape,
-                 arguments={'shape': (batches, 4, 2*seg_len*25)})(seq)
+                 arguments={'shape': (batches, 4, 2*seg_len*100)})(seq)
     print('shape of seq after reshape = ', seq.shape)
     
     # Transpose dimensions to get:
-    # (BATCH_SIZE, 25 x 2*WINDOW_SIZE, 4)
+    # (BATCH_SIZE, 100 x 2*WINDOW_SIZE, 4)
     seq = Lambda(keras_transpose,
                  arguments={'axes': (0, 2, 1)})(seq)
     print('shape of seq after transpose = ', seq.shape)
 
     # Keep track of the width of the data
-    real_width = 25 * 2*seg_len
+    real_width = 100 * 2*seg_len
     print('real width = '+str(real_width))
 
     # Perform convolutions on the sequence only, which has shape:
-    # (BATCH_SIZE, 25 x 2*WINDOW_SIZE, 4)
+    # (BATCH_SIZE, 100 x 2*WINDOW_SIZE, 4)
     for filt in seq_filters:
         patch_width, patch_depth, dilate = filt
 
@@ -180,7 +180,7 @@ def seq_module(batches, width, height, depth,
             seq = BatchNormalization()(seq)
             # seq = RevCompConv1DBatchNorm()(seq)
 
-        seq = Activation('relu')(seq)
+        seq = Activation('elu')(seq)
 
         # seq = MaxPooling1D(pool_size=2)(seq) # Dilated convolutions instead
 
@@ -192,7 +192,7 @@ def seq_module(batches, width, height, depth,
     # we want the sequence to be of shape:
     # (BATCH_SIZE, WIDTH, NUM_SEQ_FILTERS)
     # In order to get a prespecified WIDTH, we perform a final convolution
-    WIDTH = 32
+    WIDTH = 6
     seq = Conv1D(num_seq_features,
                  real_width-WIDTH+1,
                  strides=1,
@@ -200,7 +200,7 @@ def seq_module(batches, width, height, depth,
     if batchnorm:
         seq = BatchNormalization()(seq)
         # seq = RevCompConv1DBatchNorm()(seq)
-    seq = Activation('relu')(seq)
+    seq = Activation('elu')(seq)
     print('shape of seq after final 1D conv = ', seq.shape)
 
     # Now we add an extra dimension to the sequence to get:
@@ -238,7 +238,7 @@ def create_exchangeable_seq_cnn(batches, width, height, depth,
     if seg_len is None:
         seg_len = width
 
-    input_shape = (batches, height*2*seg_len*depth + 25*4*2*seg_len)
+    input_shape = (batches, height*2*seg_len*depth + 100*4*2*seg_len)
     print('input_shape = ', input_shape)
 
     inputs = Input(batch_shape=input_shape)
@@ -262,7 +262,7 @@ def create_exchangeable_seq_cnn(batches, width, height, depth,
         print('shape of x after ', filter_params, ' exchangeable = ', x.shape)
 
     # Perform a final convolution on the epigenetic data to get WIDTH
-    WIDTH = 32
+    WIDTH = 6
     x = Conv2D(num_seq_features,
                  (1, real_width-WIDTH+1),
                  strides=1,
@@ -358,7 +358,7 @@ def create_exchangeable_seq_resnet(batches, width, height, depth,
 
     if seg_len is None:
         seg_len = width
-    input_shape = (batches, height*seg_len*depth + 25*4*seg_len)
+    input_shape = (batches, height*seg_len*depth + 100*4*seg_len)
     print('input_shape = ', input_shape)
     inputs = Input(batch_shape=input_shape)
     x_depth = num_seq_features + depth

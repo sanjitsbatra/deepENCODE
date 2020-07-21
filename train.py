@@ -20,9 +20,9 @@ NUM_CPU_THREADS = 5
 
 
 def lr_scheduler(epoch):
-    if epoch < 3:
+    if epoch < 20:
         return 2e-3
-    elif epoch < 45:
+    elif epoch < 500:
         return 1e-3
     else:
         return 5e-4
@@ -33,12 +33,12 @@ if __name__ == '__main__':
     # Setup model parameters
     seg_len = None
 
-    batch_size = 64
-    epochs = 100     
+    batch_size = 16
+    epochs = 300     
     steps_per_epoch = 100  
 
     run_name_prefix = sys.argv[1]
-    window_size = int(sys.argv[2]) # => Length of window / 25 on each side
+    window_size = int(sys.argv[2]) # => Length of window / 100 on each side
     num_filters = int(sys.argv[3])
     run_name = run_name_prefix+"_"+str(window_size)+"_"+str(num_filters)
 
@@ -48,8 +48,8 @@ if __name__ == '__main__':
     CT_exchangeability = True # True is what we used for EIC19
 
     # Fix conv_length and num_filters to 4 or 8? and change dilation rate
-    epigenetic_dilations =  [1, 1, 1, 2, 2, 2, 4, 4, 4, 8] 
-    sequence_dilations = [1, 2, 4, 8, 16, 32, 64, 128, 228, 256, 256]
+    epigenetic_dilations =  [1] 
+    sequence_dilations = [1, 2, 4, 8, 16, 32, 64, 72]
 
     feature_filters_input = [[convolution_patch_width, 
                               num_filters, epigenetic_dilations[i]]
@@ -150,7 +150,7 @@ if __name__ == '__main__':
         example_input = example_input.reshape(-1)
         print("example_input shape", example_input.shape)
 
-        example_seq_input = np.zeros((25*2*window_size, 4))
+        example_seq_input = np.zeros((100*2*window_size, 4))
         example_seq_input = example_seq_input.reshape(-1)
         print("example_seq_input shape", example_seq_input.shape)
 
