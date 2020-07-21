@@ -74,58 +74,6 @@ def keras_squeeze(input_x):
 ###################### END of Keras backend helper functions ##############
 
 
-# This function performs Permutation-Invariant 
-# and Permutation-Equivariant convolutions and concatenates them
-def exchangeable_layer(x, patch_width, patch_depth,
-                       dilate, exch_func, padding, batchnorm):
-
-    # TODO: Is this needed? 
-    dilate = (1, dilate)
-
-    # Permutation-Invariant convolution
-    x_inv = Conv2D(patch_depth,
-                     (1, patch_width),
-                     dilation_rate=dilate,
-                     padding=padding)(x)
-    if batchnorm:
-        x_inv = BatchNormalization()(x_inv)
-    x_inv = Activation('elu')(x_inv)
-
-    print("Shape of Permutation-Invariance before Max", x_inv.shape)
-
-    # Permutation-Invariant collapse
-    if exch_func == 'max':
-        x_inv = Lambda(keras_max)(x_inv)
-    elif exch_func == 'nonneg_mean':
-        x_inv = Lambda(keras_nonneg_mean)(x_inv)
-    else:
-        raise NotImplementedError(
-            'exch_func must either be "max" or "nonneg_mean"')
-    print("Shape of Permutation-Invariance after Max", x_inv.shape)
-
-    # Permutation-Invariant tile
-    x_inv = Lambda(keras_tile,
-                     arguments={'height': int(x.shape[1])})(x_inv)
-    print("Shape of Permutation-Invariance after tile", x_inv.shape)
-
-    # Permutation-Equivariance convolution
-    x_equiv = Conv2D(patch_depth,
-                   (1, patch_width),
-                   dilation_rate=dilate,
-                   padding=padding)(x)
-
-    if batchnorm:
-        x_equiv = BatchNormalization()(x_equiv)
-    x_equiv = Activation('elu')(x_equiv) # relu is much better than linear
-    print("Shape of Permutation-Equivariance after Conv2D", x_equiv.shape)
-
-    # Concatenate Permutation-Invariant and Permutation-Equivariant
-    # Potentially having only equivariant seems to train better: 1 JULY 2020
-    x = Concatenate()([x_equiv, x_inv])
-
-    return x
-
-
 # This function performs convolutions on the sequence data only
 def seq_module(batches, width, height, depth,
                seq_filters, num_seq_features, seg_len,
@@ -162,9 +110,19 @@ def seq_module(batches, width, height, depth,
                  arguments={'axes': (0, 2, 1)})(seq)
     print('shape of seq after transpose = ', seq.shape)
 
-    # Keep track of the width of the data
-    real_width = 100 * 2*seg_len
-    print('real width = '+str(real_width))
+    # At this point, if we want to only look at a small window of the data
+    # Let's say, [i*100bp, i*100bp + 10*100bp] where i could be in [-W, W]
+    OFFSET_FLAG = 0
+    if(OFFSET_FLAG==1):
+        OFFSET = -3 
+        LENGTH = 10
+        x = x[:, :, OFFSET:OFFSET + LENGTH ,:]
+        seq = seq[:, 100 * OFFSET:100 * (OFFSET + LENGTH), :]
+        real_width = 100 * LENGTH
+    else:
+        # Keep track of the width of the data
+        real_width = 100 * 2*seg_len
+        print('real width = '+str(real_width))
 
     # Perform convolutions on the sequence only, which has shape:
     # (BATCH_SIZE, 100 x 2*WINDOW_SIZE, 4)
@@ -220,6 +178,63 @@ def seq_module(batches, width, height, depth,
     return x, seq
 
 
+# This function performs Permutation-Equivariant convolutions
+def equivariant_layer(x, patch_width, patch_depth,
+                       dilate, exch_func, padding, batchnorm):
+
+    # TODO: Is this needed? 
+    dilate = (1, dilate)
+
+    # Permutation-Equivariance convolution
+    x_equiv = Conv2D(patch_depth,
+                   (1, patch_width),
+                   dilation_rate=dilate,
+                   padding=padding)(x)
+
+    if batchnorm:
+        x_equiv = BatchNormalization()(x_equiv)
+    x_equiv = Activation('relu')(x_equiv) # relu is much better than linear
+    print("Shape of Permutation-Equivariance after Conv2D", x_equiv.shape)
+
+    return x_equiv
+
+
+# This function performs Permutation-Invariant convolutions
+def invariant_layer(x, patch_width, patch_depth,
+                       dilate, exch_func, padding, batchnorm):
+
+    # TODO: Is this needed? 
+    dilate = (1, dilate)
+
+    # Permutation-Invariant convolution
+    x_inv = Conv2D(patch_depth,
+                     (1, patch_width),
+                     dilation_rate=dilate,
+                     padding=padding)(x)
+    if batchnorm:
+        x_inv = BatchNormalization()(x_inv)
+    x_inv = Activation('relu')(x_inv)
+
+    print("Shape of Permutation-Invariance before Max", x_inv.shape)
+
+    # Permutation-Invariant collapse
+    if exch_func == 'max':
+        x_inv = Lambda(keras_max)(x_inv)
+    elif exch_func == 'nonneg_mean':
+        x_inv = Lambda(keras_nonneg_mean)(x_inv)
+    else:
+        raise NotImplementedError(
+            'exch_func must either be "max" or "nonneg_mean"')
+    print("Shape of Permutation-Invariance after Max", x_inv.shape)
+
+    # Permutation-Invariant tile
+    x_inv = Lambda(keras_tile,
+                     arguments={'height': int(x.shape[1])})(x_inv)
+    print("Shape of Permutation-Invariance after tile", x_inv.shape)
+
+    return x_inv
+
+
 # This function performs convolutions on the epigenetic data 
 # It then concatenates the processed sequence and epigenetic data
 # and performs a final equivariant convolution to output NUM_CELL_TYPE scalars
@@ -245,42 +260,79 @@ def create_exchangeable_seq_cnn(batches, width, height, depth,
     x, seq = seq_module(batches, width, height, depth, seq_filters,
                    num_seq_features, seg_len, batchnorm, inputs)
 
+    #####################################################################################
+    # Now perform equivariant convolutions
+    x_equiv = x
+
     # Keep track of the width of the data
     real_width = 2*seg_len
     print('real width = '+str(real_width))
-
-    # Perform convolutions on epigenetic data which currently has shape:
+    
+    # Epigenetic data currently has shape:
     # (BATCH_SIZE, NUM_CELL_TYPES, 2*WINDOW_SIZE, NUM_ASSAY_TYPES)
-    print("Before Convs: Shape of x", x.shape, "Shape of seq", seq.shape)
+    print("Before Convs: Shape of x_equiv", x_equiv.shape, "Shape of seq", seq.shape)
     for filter_params in feature_filters:
         patch_width, patch_depth, dilate = filter_params
-        x = exchangeable_layer(x, patch_width, patch_depth, dilate, exch_func,
+        x_equiv = equivariant_layer(x_equiv, patch_width, patch_depth, dilate, exch_func,
                                'valid', batchnorm)
 
         # Keep track of width after each convolution
         real_width = real_width - (patch_width - 1) * dilate
-        print('shape of x after ', filter_params, ' exchangeable = ', x.shape)
+        print('shape of x_equiv after ', filter_params, ' exchangeable = ', x_equiv.shape)
 
     # Perform a final convolution on the epigenetic data to get WIDTH
     WIDTH = 6
-    x = Conv2D(num_seq_features,
+    x_equiv = Conv2D(num_seq_features,
                  (1, real_width-WIDTH+1),
                  strides=1,
-                 padding='valid')(x)
+                 padding='valid')(x_equiv)
     if batchnorm:
-        x = BatchNormalization()(x)
-    x = Activation('relu')(x)
-    print('shape of x after final 1D conv = ', x.shape)
+        x_equiv = BatchNormalization()(x_equiv)
+    x_equiv = Activation('relu')(x_equiv)
+    print('shape of x_equiv after final 1D conv = ', x_equiv.shape)
 
+    #####################################################################################
+    # Now perform invariant convolutions
+    x_inv = x
+
+    # Keep track of the width of the data
+    real_width = 2*seg_len
+    print('real width = '+str(real_width))
+    
+    # Epigenetic data currently has shape:
+    # (BATCH_SIZE, NUM_CELL_TYPES, 2*WINDOW_SIZE, NUM_ASSAY_TYPES)
+    print("Before Convs: Shape of x_inv", x_inv.shape, "Shape of seq", seq.shape)
+    for filter_params in feature_filters:
+        patch_width, patch_depth, dilate = filter_params
+        x_inv = invariant_layer(x_inv, patch_width, patch_depth, dilate, exch_func,
+                               'valid', batchnorm)
+
+        # Keep track of width after each convolution
+        real_width = real_width - (patch_width - 1) * dilate
+        print('shape of x_inv after ', filter_params, ' exchangeable = ', x_inv.shape)
+
+    # Perform a final convolution on the epigenetic data to get WIDTH
+    WIDTH = 6
+    x_inv = Conv2D(num_seq_features,
+                 (1, real_width-WIDTH+1),
+                 strides=1,
+                 padding='valid')(x_inv)
+    if batchnorm:
+        x_inv = BatchNormalization()(x_inv)
+    x_inv = Activation('relu')(x_inv)
+    print('shape of x_inv after final 1D conv = ', x_inv.shape)
+
+    #####################################################################################
     # After performing convolutions on the epigenetic data, its shape is:
     # (BATCH_SIZE, NUM_CELL_TYPES, WIDTH, NUM_FILTERS)
     # Further, the shape of the sequence data that we received was:
     # (BATCH_SIZE, NUM_CELL_TYPES, WIDTH, NUM_SEQ_FILTERS)
-    print("Before combining, shape of x and seq are", x.shape, seq.shape)
+    print("Before combining, shape of x_equiv, x_inv and seq are", 
+           x_equiv.shape, x_inv.shape, seq.shape)
 
     # Hence, we combine these modalities along the FILTERS dimension to get:
     # (BATCH_SIZE, NUM_CELL_TYPES, WIDTH, NUM_FILTERS + NUM_SEQ_FILTERS)
-    x = Concatenate()([x, seq])
+    x = Concatenate()([x_equiv, x_inv, seq])
     print("After combinging, the shape of x is", x.shape) 
   
     ######################################################################
@@ -332,6 +384,7 @@ def customLoss(yTrue, yPred):
 
 
 #########################END_OF_USEFUL_FUNCTIONS#######################
+
 
 def maximum_likelihood_loss(y_true, y_pred, num_output):
     mu = y_pred[:, :num_output]
@@ -436,3 +489,5 @@ def create_exchangeable_cnn(batches, width, height, depth,
 
     # return the CNN
     return model
+
+
