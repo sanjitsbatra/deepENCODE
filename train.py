@@ -20,9 +20,9 @@ NUM_CPU_THREADS = 5
 
 
 def lr_scheduler(epoch):
-    if epoch < 20:
+    if epoch < 10:
         return 2e-3
-    elif epoch < 500:
+    elif epoch < 250:
         return 1e-3
     else:
         return 5e-4
@@ -40,7 +40,8 @@ if __name__ == '__main__':
     run_name_prefix = sys.argv[1]
     window_size = int(sys.argv[2]) # => Length of window / 100 on each side
     num_filters = int(sys.argv[3])
-    run_name = run_name_prefix+"_"+str(window_size)+"_"+str(num_filters)
+    OFFSET = int(sys.argv[4])
+    run_name = run_name_prefix+"_"+str(window_size)+"_"+str(num_filters)+"_"+str(OFFSET)
 
     convolution_patch_width = 11
     model_type_flag = 'Regression' # 'Classification'
@@ -48,8 +49,8 @@ if __name__ == '__main__':
     CT_exchangeability = True # True is what we used for EIC19
 
     # Fix conv_length and num_filters to 4 or 8? and change dilation rate
-    epigenetic_dilations =  [1] 
-    sequence_dilations = [1, 2, 4, 8, 16, 32, 64, 72]
+    epigenetic_dilations =  [1, 1] #, 1, 2, 2, 4, 4, 4] 
+    sequence_dilations = [1, 2, 4, 8, 16, 32, 64, 152] #, 256, 512, 960]
 
     feature_filters_input = [[convolution_patch_width, 
                               num_filters, epigenetic_dilations[i]]
@@ -68,7 +69,7 @@ if __name__ == '__main__':
 
     # Initialize model
     if(CT_exchangeability):
-        model = create_exchangeable_seq_cnn(
+        model = create_exchangeable_seq_cnn(OFFSET,
         batch_size,
         window_size,
         NUM_CELL_TYPES,
@@ -82,7 +83,7 @@ if __name__ == '__main__':
         density_network=False,
         CT_exchangeability=CT_exchangeability)
     else:
-        model = create_exchangeable_seq_cnn(
+        model = create_exchangeable_seq_cnn(OFFSET,
         batch_size,
         window_size,
         NUM_ASSAY_TYPES,

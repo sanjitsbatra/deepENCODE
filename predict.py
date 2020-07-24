@@ -21,7 +21,7 @@ if __name__ == '__main__':
                                      drop_prob = 0, 
                                      CT_exchangeability=True)
 
-    for model_number in range(10, 41, 5): # range(50, 91, 2):
+    for model_number in range(10, 301, 5): # range(50, 91, 2):
 
         # maximum_likelihood_loss(y_true, y_pred, num_output)    
         trained_model = load_model("model-"+str(model_number)+".hdf5",

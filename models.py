@@ -75,7 +75,7 @@ def keras_squeeze(input_x):
 
 
 # This function performs convolutions on the sequence data only
-def seq_module(batches, width, height, depth,
+def seq_module(OFFSET, batches, width, height, depth,
                seq_filters, num_seq_features, seg_len,
                batchnorm, inputs):
 
@@ -112,13 +112,20 @@ def seq_module(batches, width, height, depth,
 
     # At this point, if we want to only look at a small window of the data
     # Let's say, [i*100bp, i*100bp + 10*100bp] where i could be in [-W, W]
-    OFFSET_FLAG = 0
+    OFFSET_FLAG = 1
     if(OFFSET_FLAG==1):
-        OFFSET = -3 
-        LENGTH = 10
-        x = x[:, :, OFFSET:OFFSET + LENGTH ,:]
-        seq = seq[:, 100 * OFFSET:100 * (OFFSET + LENGTH), :]
-        real_width = 100 * LENGTH
+        # OFFSET = 2
+        LENGTH = 14
+        
+        slice_x = Lambda(lambda xx: xx[:, :, OFFSET:OFFSET + 2*LENGTH, :])
+        slice_seq = Lambda(lambda ss: ss[:, 100 * OFFSET:100 * (OFFSET + 2 * LENGTH), :])
+        x = slice_x(x)
+        seq = slice_seq(seq)
+        
+        print("OFFSET-ed shapes are", x.shape, seq.shape)
+        
+        real_width = 100 * 2*LENGTH
+
     else:
         # Keep track of the width of the data
         real_width = 100 * 2*seg_len
@@ -238,7 +245,7 @@ def invariant_layer(x, patch_width, patch_depth,
 # This function performs convolutions on the epigenetic data 
 # It then concatenates the processed sequence and epigenetic data
 # and performs a final equivariant convolution to output NUM_CELL_TYPE scalars
-def create_exchangeable_seq_cnn(batches, width, height, depth,
+def create_exchangeable_seq_cnn(OFFSET, batches, width, height, depth,
                                 feature_filters=((11, 64, 1),
                                                  (11, 64, 1)),
                                 seq_filters=((11, 128, 1),
@@ -257,31 +264,33 @@ def create_exchangeable_seq_cnn(batches, width, height, depth,
     print('input_shape = ', input_shape)
 
     inputs = Input(batch_shape=input_shape)
-    x, seq = seq_module(batches, width, height, depth, seq_filters,
+    x, seq = seq_module(OFFSET, batches, width, height, depth, seq_filters,
                    num_seq_features, seg_len, batchnorm, inputs)
+    WIDTH = 6
 
     #####################################################################################
     # Now perform equivariant convolutions
     x_equiv = x
 
     # Keep track of the width of the data
-    real_width = 2*seg_len
-    print('real width = '+str(real_width))
+    real_width = int(x_equiv.shape[2])
+    print('equivariant real width = '+str(real_width))
     
     # Epigenetic data currently has shape:
     # (BATCH_SIZE, NUM_CELL_TYPES, 2*WINDOW_SIZE, NUM_ASSAY_TYPES)
-    print("Before Convs: Shape of x_equiv", x_equiv.shape, "Shape of seq", seq.shape)
+    print("Before Convs: Shape of x_equiv", x_equiv.shape, 
+          "Shape of seq", seq.shape)
     for filter_params in feature_filters:
         patch_width, patch_depth, dilate = filter_params
-        x_equiv = equivariant_layer(x_equiv, patch_width, patch_depth, dilate, exch_func,
-                               'valid', batchnorm)
+        x_equiv = equivariant_layer(x_equiv, patch_width, patch_depth, 
+                                    dilate, exch_func, 'valid', batchnorm)
 
         # Keep track of width after each convolution
         real_width = real_width - (patch_width - 1) * dilate
-        print('shape of x_equiv after ', filter_params, ' exchangeable = ', x_equiv.shape)
+        print('shape of x_equiv after ', filter_params, ' equivariant = ', 
+                x_equiv.shape)
 
     # Perform a final convolution on the epigenetic data to get WIDTH
-    WIDTH = 6
     x_equiv = Conv2D(num_seq_features,
                  (1, real_width-WIDTH+1),
                  strides=1,
@@ -296,23 +305,24 @@ def create_exchangeable_seq_cnn(batches, width, height, depth,
     x_inv = x
 
     # Keep track of the width of the data
-    real_width = 2*seg_len
-    print('real width = '+str(real_width))
+    real_width = int(x_inv.shape[2])
+    print('invariant real width = '+str(real_width))
     
     # Epigenetic data currently has shape:
     # (BATCH_SIZE, NUM_CELL_TYPES, 2*WINDOW_SIZE, NUM_ASSAY_TYPES)
-    print("Before Convs: Shape of x_inv", x_inv.shape, "Shape of seq", seq.shape)
+    print("Before Convs: Shape of x_inv", x_inv.shape, 
+          "Shape of seq", seq.shape)
     for filter_params in feature_filters:
         patch_width, patch_depth, dilate = filter_params
-        x_inv = invariant_layer(x_inv, patch_width, patch_depth, dilate, exch_func,
-                               'valid', batchnorm)
+        x_inv = invariant_layer(x_inv, patch_width, patch_depth, dilate, 
+                                exch_func, 'valid', batchnorm)
 
         # Keep track of width after each convolution
         real_width = real_width - (patch_width - 1) * dilate
-        print('shape of x_inv after ', filter_params, ' exchangeable = ', x_inv.shape)
+        print('shape of x_inv after ', filter_params, 
+              'invariant = ', x_inv.shape)
 
     # Perform a final convolution on the epigenetic data to get WIDTH
-    WIDTH = 6
     x_inv = Conv2D(num_seq_features,
                  (1, real_width-WIDTH+1),
                  strides=1,
@@ -333,7 +343,7 @@ def create_exchangeable_seq_cnn(batches, width, height, depth,
     # Hence, we combine these modalities along the FILTERS dimension to get:
     # (BATCH_SIZE, NUM_CELL_TYPES, WIDTH, NUM_FILTERS + NUM_SEQ_FILTERS)
     x = Concatenate()([x_equiv, x_inv, seq])
-    print("After combinging, the shape of x is", x.shape) 
+    print("After combining, the shape of x is", x.shape) 
   
     ######################################################################
     # Attempting to print the tensor x during training: FAILED 1 JULY 2020
