@@ -71,8 +71,8 @@ if __name__ == '__main__':
         yPred = np.vstack(yPred)
         print("Shape of yTrue", yTrue.shape, "shape of yPred", yPred.shape)
 
-        np.savetxt("yTrue."+str(model_number)+".txt", yTrue, fmt='%1.4f')
-        np.savetxt("yPred."+str(model_number)+".txt", yPred, fmt='%1.4f')
+        np.savetxt("TRAIN.yTrue."+str(model_number)+".txt", yTrue, fmt='%1.4f')
+        np.savetxt("TRAIN.yPred."+str(model_number)+".txt", yPred, fmt='%1.4f')
 
         # print("yTrue[10,:]", yTrue[10,:])
         # print("yPred[10,:]", yPred[10,:])
@@ -80,8 +80,8 @@ if __name__ == '__main__':
         # print("yTrue[20,:]", yTrue[20,:])
         # print("yPred[20,:]", yPred[20,:])
 
-        f_cor = open("all_correlations."+str(model_number)+".txt", 'w')
-        f_cor_summary = open("correlations."+str(model_number)+".txt", 'w')
+        f_cor = open("TRAIN.all_correlations."+str(model_number)+".txt", 'w')
+        f_cor_summary = open("TRAIN.correlations."+str(model_number)+".txt", 'w')
 
         # Compute some statistics on yTrue and yPred
         assert(yTrue.shape[0] == yPred.shape[0])

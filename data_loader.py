@@ -100,12 +100,12 @@ class BinnedHandler(Sequence):
         self.indices = {}
 
         # For training
-        # chrom_list = ['chr1', 'chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 
+        chrom_list = ['chr22'] #, 'chr1', 'chr2']#, 'chr3', 'chr4', 'chr5'] #, 'chr6', 'chr7', 
         #               'chr8', 'chr9', 'chr10', 'chr11', 'chr12', 'chr21']
 
         # For testing
-        chrom_list = ['chr13', 'chr14', 'chr15', 'chr16', 'chr17', 'chr18',
-                      'chr19', 'chr20', 'chr22', 'chrX']
+        # chrom_list = ['chr13', 'chr14', 'chr15', 'chr16'] #, 'chr17', 'chr18',
+        #               'chr19', 'chr20', 'chr22', 'chrX']
 
         for cell_type in range(1, NUM_CELL_TYPES + 1):
             for assay_type in range(1, NUM_ASSAY_TYPES + 1):
@@ -176,7 +176,9 @@ class BinnedHandler(Sequence):
             if("chr"+chrom_name not in chrom_list):
                 # print("Skipping chr"+chrom_name+" gene expression")
                 continue
-	
+
+            # BUG discovered: 11 August 2020
+            # Incorporate strand information to distinguish TSS and TTS         	
             tss = int( int(vec[1]) / 100 )  # work at 100bp resolution
             gene_name = vec[5].split(".")[0]
             # gene_length = int( ( int(vec[2]) - int(vec[1]) ) / 100 )
@@ -211,6 +213,9 @@ class BinnedHandler(Sequence):
         for gene in genes:       
             chrom, tss = self.gene_position[gene]
             gene_expression = self.gene_expression[gene]
+
+            # TSS-hopper: TSS +- \sigma and expression +- \delta
+
 
             # save the gene_names, (cell_type x assay_type x 2*window_wize) 
             # and gene expression values as a list
