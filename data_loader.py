@@ -30,12 +30,12 @@ import random, sys
 SEQ_DIR = '/scratch/sanjit/ENCODE_Imputation_Challenge/2_April_2020/Data/genome'
 
 # For Training
-# BINNED_DATA_DIR = ('/scratch/sanjit/ENCODE_Imputation_Challenge/2_April_2020'
-#                     '/Data/Training_Data')
+BINNED_DATA_DIR = ('/scratch/sanjit/ENCODE_Imputation_Challenge/2_April_2020'
+                    '/Data/Training_Data')
 
 # For Predicting
-BINNED_DATA_DIR = ('/scratch/sanjit/ENCODE_Imputation_Challenge/2_April_2020'
-                   '/Data/Testing_Data')
+# BINNED_DATA_DIR = ('/scratch/sanjit/ENCODE_Imputation_Challenge/2_April_2020'
+#                    '/Data/Testing_Data')
 
 GENE_EXPRESSION_DATA = ('/scratch/sanjit/ENCODE_Imputation_Challenge/2_April_2020'
             '/Data/Gene_Expression/GENE_EXPRESSION.NORMALIZED.tsv')
@@ -49,6 +49,14 @@ NUM_CELL_TYPES = 12
 NUM_ASSAY_TYPES = 7
 
 ALLOWED_CHROMS = set(['chr{}'.format(k) for k in list(range(1, 23)) + ['X']])
+
+
+# Reverse complement for negative strand genes
+def reverse_complement(seq):
+    rev_seq = seq[::-1]
+    rev_comp_dict = {0:3, 1:2, 2:1, 3:0, 4:4}
+    rev_comp = [rev_comp_dict[c] for c in rev_seq]
+    return np.asarray(rev_comp)
 
 
 # For converting p-values into classes for Classification
@@ -100,8 +108,8 @@ class BinnedHandler(Sequence):
         self.indices = {}
 
         # For training
-        chrom_list = ['chr22'] #, 'chr1', 'chr2']#, 'chr3', 'chr4', 'chr5'] #, 'chr6', 'chr7', 
-        #               'chr8', 'chr9', 'chr10', 'chr11', 'chr12', 'chr21']
+        chrom_list =  ['chr1', 'chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 
+                       'chr8', 'chr9', 'chr10', 'chr11', 'chr12', 'chr21']
 
         # For testing
         # chrom_list = ['chr13', 'chr14', 'chr15', 'chr16'] #, 'chr17', 'chr18',
@@ -178,8 +186,19 @@ class BinnedHandler(Sequence):
                 continue
 
             # BUG discovered: 11 August 2020
+            # BUG fixed: 23 August 2020 by incoporating strand everywhere
             # Incorporate strand information to distinguish TSS and TTS         	
-            tss = int( int(vec[1]) / 100 )  # work at 100bp resolution
+            strand = vec[3]
+            if(strand == "+"):
+                strand = 1
+                tss = int( int(vec[1]) / 100 )  # work at 100bp resolution
+            elif(strand == "-"):
+                strand = -1
+                tss = int( int(vec[2]) / 100 )    
+            else:
+                print("Something went wrong with strand!")
+                sys.exit(-1)
+
             gene_name = vec[5].split(".")[0]
             # gene_length = int( ( int(vec[2]) - int(vec[1]) ) / 100 )
 
@@ -190,7 +209,7 @@ class BinnedHandler(Sequence):
             # these -1 values while computing the MSE loss; while still 
             # being able to transfer learn from the EIC network output
 
-            self.gene_position[gene_name] = (chrom_name, tss)
+            self.gene_position[gene_name] = (chrom_name, tss, strand)
             self.gene_expression[gene_name] = np.full((NUM_CELL_TYPES, 1), 
                                                 -1000.0, dtype=np.float32)
 
@@ -211,7 +230,7 @@ class BinnedHandler(Sequence):
         genes = random.sample(self.gene_names, self.batch_size)
 
         for gene in genes:       
-            chrom, tss = self.gene_position[gene]
+            chrom, tss, strand = self.gene_position[gene]
             gene_expression = self.gene_expression[gene]
 
             # TSS-hopper: TSS +- \sigma and expression +- \delta
@@ -220,18 +239,27 @@ class BinnedHandler(Sequence):
             # save the gene_names, (cell_type x assay_type x 2*window_wize) 
             # and gene expression values as a list
             batch.append([gene, 
-                          self.load_gene_data(chrom, tss, self.window_size),
+                          self.load_gene_data(chrom, tss, strand, 
+                                              self.window_size),
                           gene_expression])
         
         # print("Batch created", batch[0][0])
         return batch
 
-    def load_gene_data(self, chrom, tss, window_size):
+    def load_gene_data(self, chrom, tss, strand, window_size):
+        if(strand == 1):
+            data = self.data[chrom][:, tss-window_size:tss+window_size]
+        elif(strand == -1):
+            data = self.data[chrom][:, tss+window_size-1:tss-window_size-1:-1]
+        else:
+            print("Something went wrong with the strand information")
+            sys.exit(-1)
+
         return make_input_for_regression(NUM_CELL_TYPES,
                           NUM_ASSAY_TYPES,
                           2*window_size,
                           self.indices[chrom],
-                          self.data[chrom][:, tss-window_size:tss+window_size])
+                          data)
 
 
 # by passing object as argument, SeqHandler becomes an object of BinnedHandler
@@ -251,11 +279,19 @@ class SeqHandler(object):
     def get_dna(self, gene_names):
         seq = []
         for gene in gene_names:
-            chrom, tss = self.gene_position[gene]
+            chrom, tss, strand = self.gene_position[gene]
             start = (tss - self.window_size) * 100
             end = (tss + self.window_size) * 100
             this_seq = self.dna[chrom][max(start, 0):min(end, 
                                                 self.chrom_lens[chrom]*100)]
+
+            if(strand == 1):
+                pass
+            elif(strand == -1):
+                this_seq = reverse_complement(this_seq)
+            else:
+                print("Something is wrong with the strand")
+                sys.exit(-1)
 
             # print("Shape of this_seq before padding", len(this_seq))
             # Pad the input

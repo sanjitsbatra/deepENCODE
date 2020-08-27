@@ -112,7 +112,7 @@ def seq_module(OFFSET, batches, width, height, depth,
 
     # At this point, if we want to only look at a small window of the data
     # Let's say, [i*100bp, i*100bp + 10*100bp] where i could be in [-W, W]
-    OFFSET_FLAG = 1
+    OFFSET_FLAG = 0
     if(OFFSET_FLAG==1):
         # OFFSET = 2
         LENGTH = 14
@@ -342,7 +342,7 @@ def create_exchangeable_seq_cnn(OFFSET, batches, width, height, depth,
 
     # Hence, we combine these modalities along the FILTERS dimension to get:
     # (BATCH_SIZE, NUM_CELL_TYPES, WIDTH, NUM_FILTERS + NUM_SEQ_FILTERS)
-    x = x_equiv # Concatenate()([x_equiv]) #, x_inv]) #, seq])
+    x = Concatenate()([x_equiv, x_inv, seq])
     print("After combining, the shape of x is", x.shape) 
   
     ######################################################################

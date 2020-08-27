@@ -61,7 +61,7 @@ def modify_input(x, m, assay_type, batch_size, height, width, depth):
     #'''
     # Create peaks that change by position for each assay
     modified_assay = np.full((batch_size, height, 2*width), -1.82)   
-    modified_assay[:, :, m-10:m+10] = 5.3            
+    modified_assay[:, :, m-10:m+10] = 7.6            
     modified_epigenetics = np.concatenate([epigenetics[:,:,:,:assay_type],
                            np.expand_dims(modified_assay, axis = 3),
                            epigenetics[:, :, :, assay_type+1:]], axis = 3)
