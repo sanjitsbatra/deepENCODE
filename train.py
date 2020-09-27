@@ -49,8 +49,8 @@ if __name__ == '__main__':
     CT_exchangeability = True # True is what we used for EIC19
 
     # Fix conv_length and num_filters to 4 or 8? and change dilation rate
-    epigenetic_dilations =  [1, 1, 1, 2, 2, 4, 4, 4] 
-    sequence_dilations = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 976]
+    epigenetic_dilations =  [1, 1, 1, 2, 2, 4] 
+    sequence_dilations = [1] #, 2, 4, 8, 16, 32, 64, 128, 256, 512, 976]
 
     feature_filters_input = [[convolution_patch_width, 
                               num_filters, epigenetic_dilations[i]]

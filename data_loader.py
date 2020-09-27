@@ -30,15 +30,15 @@ import random, sys
 SEQ_DIR = '/scratch/sanjit/ENCODE_Imputation_Challenge/2_April_2020/Data/genome'
 
 # For Training
-BINNED_DATA_DIR = ('/scratch/sanjit/ENCODE_Imputation_Challenge/2_April_2020'
-                    '/Data/Training_Data')
+# BINNED_DATA_DIR = ('/scratch/sanjit/ENCODE_Imputation_Challenge/2_April_2020'
+#                     '/Data/Training_Data')
 
 # For Predicting
-# BINNED_DATA_DIR = ('/scratch/sanjit/ENCODE_Imputation_Challenge/2_April_2020'
-#                    '/Data/Testing_Data')
+BINNED_DATA_DIR = ('/scratch/sanjit/ENCODE_Imputation_Challenge/2_April_2020'
+                   '/Data/Testing_Data')
 
 GENE_EXPRESSION_DATA = ('/scratch/sanjit/ENCODE_Imputation_Challenge/2_April_2020'
-            '/Data/Gene_Expression/GENE_EXPRESSION.NORMALIZED.tsv')
+            '/Data/Gene_Expression/gene_expression.tsv')
 
 
 # DECREASING NUM_CELL_TYPES TO LOWER THAN 12 LEADS TO MALLOC ERROR
@@ -46,7 +46,7 @@ GENE_EXPRESSION_DATA = ('/scratch/sanjit/ENCODE_Imputation_Challenge/2_April_202
 # These errors should now be fixed by the 28 June 2020 correction in the
 # make_input_for_regression function 
 NUM_CELL_TYPES = 12 
-NUM_ASSAY_TYPES = 7
+NUM_ASSAY_TYPES = 6
 
 ALLOWED_CHROMS = set(['chr{}'.format(k) for k in list(range(1, 23)) + ['X']])
 
@@ -74,7 +74,7 @@ def make_input_for_regression(num_cell_types, num_assay_types,
     
     for ii in range(indices.shape[0]):
         if ( (indices[ii, 0] - 1 >= num_cell_types) or
-             (indices[ii, 1] - 1>= num_assay_types) ):
+             (indices[ii, 1] - 1 >= num_assay_types) ):
             print("The self indices are more than the size of the array!")
             continue
 
@@ -108,18 +108,18 @@ class BinnedHandler(Sequence):
         self.indices = {}
 
         # For training
-        chrom_list =  ['chr1', 'chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 
-                       'chr8', 'chr9', 'chr10', 'chr11', 'chr12', 'chr21']
+        # chrom_list =  ['chr1', 'chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 
+        #                'chr8', 'chr9', 'chr10', 'chr11', 'chr12', 'chr21']
 
         # For testing
-        # chrom_list = ['chr13', 'chr14', 'chr15', 'chr16'] #, 'chr17', 'chr18',
-        #               'chr19', 'chr20', 'chr22', 'chrX']
+        chrom_list = ['chr13', 'chr14', 'chr15'] #, 'chr16', 'chr17', 'chr18',
+                     #  'chr19', 'chr20', 'chr22', 'chrX']
 
         for cell_type in range(1, NUM_CELL_TYPES + 1):
             for assay_type in range(1, NUM_ASSAY_TYPES + 1):
                 for chrom in [str(k) for k in range(1, 23)] + ['X']:
                     fname = 'T{:02}A{:02}.chr{}.npy'.format(cell_type,
-                                                            assay_type,
+                                                            assay_type+1,
                                                             chrom)
                     fname = join(BINNED_DATA_DIR, fname)
                     if isfile(fname):
@@ -133,11 +133,11 @@ class BinnedHandler(Sequence):
 			
                         # For keeping the epigenetic features continuous
                         # Caution: We are working with log10(-log10 p-values ?)
-                        # this_array = np.log1p(this_array)
+                        this_array = np.log1p(this_array)
 
                         # Instead of taking the log10 of -log10 p-values
                         # We can perform arcsinh(-log10 p-values - 3)
-                        this_array = np.arcsinh(this_array - 3)
+                        # this_array = np.arcsinh(this_array - 3)
 
                         # For binarizing the epigenetic features
                         # Convert -log10(p-values) into classes
@@ -191,9 +191,11 @@ class BinnedHandler(Sequence):
             strand = vec[3]
             if(strand == "+"):
                 strand = 1
+                tss_exact = int(vec[1])
                 tss = int( int(vec[1]) / 100 )  # work at 100bp resolution
             elif(strand == "-"):
                 strand = -1
+                tss_exact = int(vec[2])
                 tss = int( int(vec[2]) / 100 )    
             else:
                 print("Something went wrong with strand!")
@@ -209,13 +211,14 @@ class BinnedHandler(Sequence):
             # these -1 values while computing the MSE loss; while still 
             # being able to transfer learn from the EIC network output
 
-            self.gene_position[gene_name] = (chrom_name, tss, strand)
+            self.gene_position[gene_name] = (chrom_name, tss_exact, tss, strand)
             self.gene_expression[gene_name] = np.full((NUM_CELL_TYPES, 1), 
                                                 -1000.0, dtype=np.float32)
 
             for col_i in range(6, len(vec)):
                 # print(col_i-6, vec[col_i])
-                self.gene_expression[gene_name][col_i-6] = float(vec[col_i])
+                self.gene_expression[gene_name][col_i-6] = np.log1p(float(
+                                                                vec[col_i]))
 
         self.gene_names = self.gene_expression.keys()
 
@@ -230,11 +233,11 @@ class BinnedHandler(Sequence):
         genes = random.sample(self.gene_names, self.batch_size)
 
         for gene in genes:       
-            chrom, tss, strand = self.gene_position[gene]
+            chrom, tss_exact, tss, strand = self.gene_position[gene]
             gene_expression = self.gene_expression[gene]
 
             # TSS-hopper: TSS +- \sigma and expression +- \delta
-
+            # Note that we don't perform TSS-hopper for the epigenetic tracks 
 
             # save the gene_names, (cell_type x assay_type x 2*window_wize) 
             # and gene expression values as a list
@@ -279,9 +282,13 @@ class SeqHandler(object):
     def get_dna(self, gene_names):
         seq = []
         for gene in gene_names:
-            chrom, tss, strand = self.gene_position[gene]
-            start = (tss - self.window_size) * 100
-            end = (tss + self.window_size) * 100
+            chrom, tss_exact, tss, strand = self.gene_position[gene]
+
+            # TSS-hopper: TSS +- \sigma (and expression +- \delta)
+            tss_exact = tss_exact + random.randint(-100, 100) 
+
+            start = tss_exact - (self.window_size * 100)
+            end = tss_exact + (self.window_size * 100)
             this_seq = self.dna[chrom][max(start, 0):min(end, 
                                                 self.chrom_lens[chrom]*100)]
 

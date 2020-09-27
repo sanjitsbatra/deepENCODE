@@ -342,7 +342,7 @@ def create_exchangeable_seq_cnn(OFFSET, batches, width, height, depth,
 
     # Hence, we combine these modalities along the FILTERS dimension to get:
     # (BATCH_SIZE, NUM_CELL_TYPES, WIDTH, NUM_FILTERS + NUM_SEQ_FILTERS)
-    x = Concatenate()([x_equiv, x_inv, seq])
+    x = Concatenate()([x_equiv, x_inv]) #, seq])
     print("After combining, the shape of x is", x.shape) 
   
     ######################################################################

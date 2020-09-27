@@ -26,10 +26,10 @@ def modify_input(x, m, assay_type, batch_size, height, width, depth):
     '''
     # Permute the input features along the position dimension
     if(assay_type == -1): # permute the sequence
-        seq = seq.reshape(batch_size, 4, 2*width*100)        
-        seq = seq.transpose(0, 2, 1)
-        [np.random.shuffle(x) for x in seq] # in-place permutation
-        modified_seq = seq.transpose(0, 2, 1)
+        modified_seq = modified_seq.reshape(batch_size, 4, 2*width*100)        
+        modified_seq = modified_seq.transpose(0, 2, 1)
+        [np.random.shuffle(x) for x in modified_seq] # in-place permutation
+        modified_seq = modified_seq.transpose(0, 2, 1)
     else: # permute one of the 7 epigenetic assays 
         # First bring the position dimension next to the batch_size
         assay = epigenetics[:, :, :, assay_type].transpose(0, 2, 1)
@@ -57,15 +57,29 @@ def modify_input(x, m, assay_type, batch_size, height, width, depth):
                                np.expand_dims(modified_assay, axis = 3),
                                epigenetics[:, :, :, assay_type+1:]], axis = 3)
     '''
+
+    '''
+    # Set the sequence to constant values in windows
+    if(assay_type == -1): 
+        G = np.asarray([0, 0, 1, 0])
+        T = np.asarray([0, 0, 0, 1])
+        modified_seq = modified_seq.reshape(batch_size, 4, 2*width*100)
+        modified_seq = modified_seq.transpose(0, 2, 1)
+        modified_seq[:, 100*(m-1):100*(m+1)] = np.repeat(np.expand_dims
+                                               (np.repeat(np.expand_dims     
+                                                (T, axis=0), 200, axis=0),
+                                                axis=0), batch_size, axis=0)
+        modified_seq = modified_seq.transpose(0, 2, 1)
+    '''
     
-    #'''
+    # '''
     # Create peaks that change by position for each assay
     modified_assay = np.full((batch_size, height, 2*width), -1.82)   
-    modified_assay[:, :, m-10:m+10] = 7.6            
+    modified_assay[:, :, m-5:m+5] = 5.3 #7.6            
     modified_epigenetics = np.concatenate([epigenetics[:,:,:,:assay_type],
                            np.expand_dims(modified_assay, axis = 3),
                            epigenetics[:, :, :, assay_type+1:]], axis = 3)
-    #'''
+    # '''
 
     '''
     # Multiply an assay_type by a supplied scalar
@@ -94,7 +108,7 @@ if __name__ == '__main__':
                                      CT_exchangeability=True)
 
     # We perform inference using a trained model
-    model_number = 70
+    model_number = 35
 
     # maximum_likelihood_loss(y_true, y_pred, num_output)    
     trained_model = load_model("model-"+str(model_number)+".hdf5",
@@ -111,19 +125,19 @@ if __name__ == '__main__':
     # as a function of the multiplier of different assays
     print('Beginning inference')
 
-    cell_type = 10
+    cell_type = 4
     idx = 0
     for idx in range(100):
         x, y = bwh[idx]
         # x1 = np.expand_dims(x[0,:], axis=0)
         yTrue = y[0][cell_type]
-        if ( (yTrue < 0.1)  ):
+        if ( (yTrue < 1.00)  ):
             continue
 
         yPred = []    
 
 
-        for assay_type in range(0, 7): #(-1, 7) to include sequence also
+        for assay_type in range(0, 6): #(-1, 7) to include sequence also
             yy = []   
             for m_sign in [1]: #[-1, 1]
 
