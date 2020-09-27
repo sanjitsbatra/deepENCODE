@@ -185,6 +185,29 @@ def seq_module(OFFSET, batches, width, height, depth,
     return x, seq
 
 
+# This function performs convolutions on the epigenetic data only (no sequence)
+def epi_module(batches, width, height, depth,
+               seg_len, batchnorm, inputs):
+
+    # Print the dimensions of the input data
+    print("height", height, "2*seg_len", 2*seg_len, "depth", depth) 
+
+    # Subset the first few columns to obtain the epigenetic data of shape:
+    # (BATCH_SIZE, NUM_CELL_TYPES*2*WINDOW_SIZE*NUM_ASSAY_TYPES)
+    x = Lambda(lambda x: x[:, :height*2*seg_len*depth])(inputs)
+    print('shape of x after taking first few columns= ', x.shape)
+    assert(x.shape == inputs.shape)
+
+    # Reshape these columns to get the epigenetic data in the shape:
+    # (BATCH_SIZE, NUM_CELL_TYPES, 2*WINDOW_SIZE, NUM_ASSAY_TYPES)
+    x = Lambda(keras_reshape,
+               arguments={'shape': (batches, height, 2*seg_len, depth)})(x)
+    print('shape of x after reshape = ', x.shape)
+
+    print('shape of unprocessed epigenetic data is = ', x.shape)
+    return x
+
+
 # This function performs Permutation-Equivariant convolutions
 def equivariant_layer(x, patch_width, patch_depth,
                        dilate, exch_func, padding, batchnorm):
@@ -260,12 +283,23 @@ def create_exchangeable_seq_cnn(OFFSET, batches, width, height, depth,
     if seg_len is None:
         seg_len = width
 
-    input_shape = (batches, height*2*seg_len*depth + 100*4*2*seg_len)
-    print('input_shape = ', input_shape)
+    # On 27 September, we removed sequence from the input
+    SEQUENCE_FLAG = 0
 
-    inputs = Input(batch_shape=input_shape)
-    x, seq = seq_module(OFFSET, batches, width, height, depth, seq_filters,
-                   num_seq_features, seg_len, batchnorm, inputs)
+    if(SEQUENCE_FLAG == 1):
+        input_shape = (batches, height*2*seg_len*depth + 100*4*2*seg_len)
+        print('input_shape = ', input_shape)
+        inputs = Input(batch_shape=input_shape)
+        x, seq = seq_module(OFFSET, batches, width, height, depth, seq_filters,
+                       num_seq_features, seg_len, batchnorm, inputs)
+    else:
+        input_shape = (batches, height*2*seg_len*depth)
+        print('input_shape without sequence in the model', input_shape)
+        inputs = Input(batch_shape=input_shape)
+        x = epi_module(batches, width, height, depth, 
+                        seg_len, batchnorm, inputs)
+        seq = np.asarray([])
+
     WIDTH = 6
 
     #####################################################################################
