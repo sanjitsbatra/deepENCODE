@@ -30,12 +30,12 @@ import random, sys
 SEQ_DIR = '/scratch/sanjit/ENCODE_Imputation_Challenge/2_April_2020/Data/genome'
 
 # For Training
-# BINNED_DATA_DIR = ('/scratch/sanjit/ENCODE_Imputation_Challenge/2_April_2020'
-#                     '/Data/Training_Data')
+BINNED_DATA_DIR = ('/scratch/sanjit/ENCODE_Imputation_Challenge/2_April_2020'
+                    '/Data/Training_Data')
 
 # For Predicting
-BINNED_DATA_DIR = ('/scratch/sanjit/ENCODE_Imputation_Challenge/2_April_2020'
-                   '/Data/Testing_Data')
+# BINNED_DATA_DIR = ('/scratch/sanjit/ENCODE_Imputation_Challenge/2_April_2020'
+#                    '/Data/Testing_Data')
 
 GENE_EXPRESSION_DATA = ('/scratch/sanjit/ENCODE_Imputation_Challenge/2_April_2020'
             '/Data/Gene_Expression/gene_expression.tsv')
@@ -108,11 +108,11 @@ class BinnedHandler(Sequence):
         self.indices = {}
 
         # For training
-        # chrom_list =  ['chr1', 'chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 
-        #                'chr8', 'chr9', 'chr10', 'chr11', 'chr12', 'chr21']
+        chrom_list =  ['chr12'] #, 'chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 
+                       # 'chr8', 'chr9', 'chr10', 'chr11', 'chr12', 'chr21']
 
         # For testing
-        chrom_list = ['chr13', 'chr14', 'chr15'] #, 'chr16', 'chr17', 'chr18',
+        # chrom_list = ['chr13', 'chr14', 'chr15'] #, 'chr16', 'chr17', 'chr18',
                      #  'chr19', 'chr20', 'chr22', 'chrX']
 
         for cell_type in range(1, NUM_CELL_TYPES + 1):
@@ -396,9 +396,11 @@ class BinnedHandlerSeqTraining(BinnedHandlerTraining, SeqHandler):
 
         # print("shape of x", x.shape, "shape of each seq", seq[0].shape)        
         x = x.reshape((self.batch_size, -1))
-        # print("shape of x after reshape", x.shape)  
+        # print("shape of x after reshape", x.shape)      
+    
+        # On September 27 2020, we decided to remove sequence
+        # x = np.hstack([x, seq]) # So this is now commented out
 
-        x = np.hstack([x, seq])
         # print("final shape of x with seq", x.shape)
         # print("y shape", np.squeeze(np.asarray(y)).shape)
         return x, np.squeeze(np.asarray(y)) # TODO make this faster

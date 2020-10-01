@@ -298,7 +298,7 @@ def create_exchangeable_seq_cnn(OFFSET, batches, width, height, depth,
         inputs = Input(batch_shape=input_shape)
         x = epi_module(batches, width, height, depth, 
                         seg_len, batchnorm, inputs)
-        seq = np.asarray([])
+        seq = numpy.asarray([])
 
     WIDTH = 6
 

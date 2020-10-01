@@ -2,7 +2,7 @@ from __future__ import print_function
 from __future__ import division
 import numpy as np
 from os.path import join
-from data_loader import BinnedHandlerSeqPredicting
+from data_loader import BinnedHandlerSeqTraining
 from data_loader import NUM_CELL_TYPES, NUM_ASSAY_TYPES
 from models import customLoss, maximum_likelihood_loss
 from numba import njit
@@ -74,8 +74,8 @@ def modify_input(x, m, assay_type, batch_size, height, width, depth):
     
     # '''
     # Create peaks that change by position for each assay
-    modified_assay = np.full((batch_size, height, 2*width), -1.82)   
-    modified_assay[:, :, m-5:m+5] = 5.3 #7.6            
+    modified_assay = np.full((batch_size, height, 2*width), 0.1)   
+    modified_assay[:, :, m-5:m+5] = 20 #7.6            
     modified_epigenetics = np.concatenate([epigenetics[:,:,:,:assay_type],
                            np.expand_dims(modified_assay, axis = 3),
                            epigenetics[:, :, :, assay_type+1:]], axis = 3)
@@ -103,7 +103,7 @@ if __name__ == '__main__':
 
     batch_size = 16
     window_size = int(sys.argv[1])     
-    bwh = BinnedHandlerSeqPredicting(window_size, batch_size, 
+    bwh = BinnedHandlerSeqTraining(window_size, batch_size, 
                                      drop_prob = 0, 
                                      CT_exchangeability=True)
 
@@ -125,7 +125,7 @@ if __name__ == '__main__':
     # as a function of the multiplier of different assays
     print('Beginning inference')
 
-    cell_type = 4
+    cell_type = 9 
     idx = 0
     for idx in range(100):
         x, y = bwh[idx]
