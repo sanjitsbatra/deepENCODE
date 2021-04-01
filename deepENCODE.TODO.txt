@@ -1,9 +1,0 @@
-deepENCODE TODO: 1 June 2020 
-
-1) Conditioning of Input and Output data
-
-2) Y data creation convert to list comprehension and remove squeeze
-
-3) Remove __len__ function dependence on steps_per_epoch
-
-4) Set up evaluation

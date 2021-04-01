@@ -1,1 +1,0 @@
-for i in ../asinh_est/*.bedgraph;do awk -F $"\t" '{printf $1;printf " %d",$2;printf " %d",$3;printf " "$4;printf "\n";}' ${i} | sed \$d > temp && ../bedGraphToBigWig temp ../hg38.chr21.chrom.sizes $(basename ${i})".bigwig";done

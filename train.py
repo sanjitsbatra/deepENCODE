@@ -8,13 +8,16 @@ from models import customLoss, maximum_likelihood_loss
 from keras.callbacks import ModelCheckpoint, LearningRateScheduler
 import sys
 import os
-from keras import backend as K
+from tensorflow.keras import backend as K
 import numpy as np
 # import keract # requires python3
 
 import os
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' 
-import tensorflow as tf
+
+# import tensorflow as tf
+import tensorflow.compat.v1 as tf
+# tf.disable_v2_behavior()
 
 NUM_CPU_THREADS = 5
 
@@ -43,13 +46,13 @@ if __name__ == '__main__':
     OFFSET = int(sys.argv[4])
     run_name = run_name_prefix+"_"+str(window_size)+"_"+str(num_filters)+"_"+str(OFFSET)
 
-    convolution_patch_width = 11
+    convolution_patch_width = 7 # 11
     model_type_flag = 'Regression' # 'Classification'
     drop_probability = 0.00
     CT_exchangeability = True # True is what we used for EIC19
 
     # Fix conv_length and num_filters to 4 or 8? and change dilation rate
-    epigenetic_dilations =  [1, 1, 1, 2, 2, 4] 
+    epigenetic_dilations =  [1, 1, 1] #, 2, 2, 4] 
     sequence_dilations = [1] #, 2, 4, 8, 16, 32, 64, 128, 256, 512, 976]
 
     feature_filters_input = [[convolution_patch_width, 

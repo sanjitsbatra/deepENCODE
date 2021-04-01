@@ -38,7 +38,7 @@ BINNED_DATA_DIR = ('/scratch/sanjit/ENCODE_Imputation_Challenge/2_April_2020'
 #                    '/Data/Testing_Data')
 
 GENE_EXPRESSION_DATA = ('/scratch/sanjit/ENCODE_Imputation_Challenge/2_April_2020'
-            '/Data/Gene_Expression/gene_expression.tsv')
+            '/Data/Gene_Expression/T') #gene_expression.tsv')
 
 
 # DECREASING NUM_CELL_TYPES TO LOWER THAN 12 LEADS TO MALLOC ERROR
@@ -108,18 +108,18 @@ class BinnedHandler(Sequence):
         self.indices = {}
 
         # For training
-        chrom_list =  ['chr12'] #, 'chr2', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 
-                       # 'chr8', 'chr9', 'chr10', 'chr11', 'chr12', 'chr21']
+        # chrom_list =  ['chr1', 'chr3', 'chr5', 'chr7', 'chr9', 'chr11']# , 
+        #              'chr13', 'chr15', 'chr17', 'chr19', 'chr21']
 
         # For testing
-        # chrom_list = ['chr13', 'chr14', 'chr15'] #, 'chr16', 'chr17', 'chr18',
+        chrom_list = ['chr2' , 'chr12'] #, 'chr15'] #, 'chr16', 'chr17', 'chr18',
                      #  'chr19', 'chr20', 'chr22', 'chrX']
 
         for cell_type in range(1, NUM_CELL_TYPES + 1):
             for assay_type in range(1, NUM_ASSAY_TYPES + 1):
                 for chrom in [str(k) for k in range(1, 23)] + ['X']:
                     fname = 'T{:02}A{:02}.chr{}.npy'.format(cell_type,
-                                                            assay_type+1,
+                                                            assay_type+1, # This is what skips DNase-seq
                                                             chrom)
                     fname = join(BINNED_DATA_DIR, fname)
                     if isfile(fname):
@@ -242,8 +242,7 @@ class BinnedHandler(Sequence):
             # save the gene_names, (cell_type x assay_type x 2*window_wize) 
             # and gene expression values as a list
             batch.append([gene, 
-                          self.load_gene_data(chrom, tss, strand, 
-                                              self.window_size),
+                        self.load_gene_data(chrom, tss, strand, self.window_size),
                           gene_expression])
         
         # print("Batch created", batch[0][0])
@@ -403,7 +402,7 @@ class BinnedHandlerSeqTraining(BinnedHandlerTraining, SeqHandler):
 
         # print("final shape of x with seq", x.shape)
         # print("y shape", np.squeeze(np.asarray(y)).shape)
-        return x, np.squeeze(np.asarray(y)) # TODO make this faster
+        return gene_names, x, np.squeeze(np.asarray(y)) # TODO make this faster
 
 
 class BinnedHandlerPredicting(BinnedHandler):

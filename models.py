@@ -8,7 +8,11 @@ from keras.layers import MaxPooling1D, Lambda, Add
 from keras.layers.convolutional import Conv1D, Conv2D
 from keras.models import Model
 # from keras.losses import logcosh
-import tensorflow as tf
+
+# import tensorflow as tf
+# import tensorflow.compat.v1 as tf
+# tf.disable_v2_behavior()
+
 from keras import backend as K
 from data_loader import NUM_CELL_TYPES, NUM_ASSAY_TYPES
 # from keras_genomics.layers.normalization import RevCompConv1DBatchNorm

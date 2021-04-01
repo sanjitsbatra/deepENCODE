@@ -17,7 +17,19 @@ def compute_loss(trained_model, x, x_0, yPred, yDesired, cell_type, lambdaa):
     xx = tf.concat([x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x], 0)
     yPred = trained_model(xx, training=False)
 
-    loss = -1*K.square(yDesired - yPred[0][cell_type])
+    loss = (-1*K.square(yDesired - yPred[0][0]) + 
+            -1*K.square(yDesired - yPred[0][1]) +
+            -1*K.square(yDesired - yPred[0][2]) +
+            -1*K.square(yDesired - yPred[0][3]) +
+            -1*K.square(yDesired - yPred[0][4]) +
+            -1*K.square(yDesired - yPred[0][5]) +
+            -1*K.square(yDesired - yPred[0][6]) +
+            -1*K.square(yDesired - yPred[0][7]) +
+            -1*K.square(yDesired - yPred[0][8]) +
+            -1*K.square(yDesired - yPred[0][9]) +
+            -1*K.square(yDesired - yPred[0][10]) +
+            -1*K.square(yDesired - yPred[0][11]) )
+            
     print("Computed loss")
     tf.print(loss)
     return loss #tf.reduce_mean(x)
@@ -46,7 +58,7 @@ def gradient_ascent_step(trained_model, x, x_0,
 if __name__ == '__main__':
 
     lambdaa = float(sys.argv[2])
-    cell_type = 4
+    cell_type = 10
     model_number = 35
     trained_model = load_model("model-"+str(model_number)+".hdf5",
                                 custom_objects={'customLoss': customLoss})
@@ -65,10 +77,10 @@ if __name__ == '__main__':
 
     x = np.copy(x_0)
     x = tf.convert_to_tensor(x)
-    yDesired = yTrue + 3
+    yDesired = yTrue + 5
     yPred = 100
 
-    for iteration in range(100):
+    for iteration in range(300):
         losss, x = gradient_ascent_step(trained_model, x, x_0, yPred, yDesired,
                                         cell_type, lambdaa)
 
@@ -86,10 +98,19 @@ if __name__ == '__main__':
 
     # os._exit(0) 
     # sys.exit(0)
+    
+    f = open("output."+str(predicted_x_0)+"_"+str(predicted_xx)+".txt", 'w')
 
     x_0 = x_0.reshape(1, NUM_CELL_TYPES, 2*window_size, NUM_ASSAY_TYPES)
     xx = xx.reshape(1, NUM_CELL_TYPES, 2*window_size, NUM_ASSAY_TYPES)
     for at in range(NUM_ASSAY_TYPES):
-        print("TRUE", at+1, x_0[:, cell_type, :, at])
-        print("Optimized", at+1, xx[:, cell_type, :, at])   
+        for pos in range(2*window_size):
+            print(at+1, pos+1, (xx[:, cell_type, pos, at][0] - 
+                                    x_0[:, cell_type, pos, at][0]) , file=f)
+
+    # for at in range(NUM_ASSAY_TYPES):
+    #     for pos in range(2*window_size):
+    #      print("OPTIMIZED",at+1,pos+1,xx[:, cell_type, pos, at][0], file=f)
+
+    f.close()
     
