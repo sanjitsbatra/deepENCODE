@@ -10,13 +10,13 @@ from numba import njit
 import keras
 import random, sys
 
-DATA_FOLDER = 
+DATA_FOLDER = '/scratch/sanjit/ENCODE_Imputation_Challenge/2_April_2020/Data/100bp_12_7_Data_20_July_2020' 
 
-CELL_TYPES = []
+CELL_TYPES = ["T01", "T05"]
 
-ASSAY_TYPES = []
+ASSAY_TYPES = ["A02", "A03", "A04", "A05", "A06", "A07"]
 
-training_chroms = []
+training_chroms = ["chr16"]
 
 
 def preprocess_data(data):
@@ -31,7 +31,7 @@ def create_masked(x):
 
 	# we mask out some portions by setting them to mask_value
 	mask_value = -1 # Could be 0 or 100 as well
-	random_region_size = 
+	random_region_size = 2 
 	random_region_start = np.random(0, x.shape[1]-random_region_size-1)
 	x[:, random_region_start:random_region_size] = mask_value
 
@@ -103,25 +103,25 @@ class DataGenerator(keras.utils.Sequence):
 	def __getitem__(self, batch_number):
 
 		X = np.zeros((self.batch_size, self.window_size, len(ASSAY_TYPES)))
-		X = np.zeros((self.batch_size, self.window_size, len(ASSAY_TYPES)))
+		Y = np.zeros((self.batch_size, self.window_size, len(ASSAY_TYPES)))
 
-		for i in range(self.batch_size):
-		    idx = self.idxs[batch_number * self.batch_size + i]
-		    chrom, start = self.idx_to_chrom_and_start(idx)
-		    end = start + self.window_size
+        for i in range(self.batch_size):
+            idx = self.idxs[batch_number * self.batch_size + i]
+            chrom, start = self.idx_to_chrom_and_start(idx)
+            end = start + self.window_size
 
-		    if( (start < 1000) or (end > self.chrom_lens[chrom] + 1000) ):
-		    	# We are too close to the edges of the chromosome
-		    	# So we create a dummy point with all 0s
-		    	# Since X and Y are aleady 0s, we do nothing
-		    	pass
-		    else:
-		    	random_cell_type = CELL_TYPES[0] # Fix cell type for testing
-				if(self.mode == 'train'):
-					# Randomly sample a cell type
-					random_cell_type = CELL_TYPES[random_cell_type_index]
+            if( (start < 1000) or (end > self.chrom_lens[chrom] + 1000) ):
+                # We are too close to the edges of the chromosome
+                # So we create a dummy point with all 0s
+                # Since X and Y are aleady 0s, we do nothing
+                pass
+            else:
+                random_cell_type = CELL_TYPES[0] # Fix cell type for testing
+                if(self.mode == 'train'):
+                    # Randomly sample a cell type
+                    random_cell_type = CELL_TYPES[random_cell_type_index]
 
 		    	Y[i] = self.data[chrom][random_cell_type][:, start:end]
 		    	X[i] = create_masked(Y[i])
 
-		   return X, Y
+        return X, Y
