@@ -105,23 +105,23 @@ class DataGenerator(keras.utils.Sequence):
 		X = np.zeros((self.batch_size, self.window_size, len(ASSAY_TYPES)))
 		Y = np.zeros((self.batch_size, self.window_size, len(ASSAY_TYPES)))
 
-        for i in range(self.batch_size):
-            idx = self.idxs[batch_number * self.batch_size + i]
-            chrom, start = self.idx_to_chrom_and_start(idx)
-            end = start + self.window_size
+		for i in range(self.batch_size):
+		idx = self.idxs[batch_number * self.batch_size + i]
+		chrom, start = self.idx_to_chrom_and_start(idx)
+		end = start + self.window_size
 
-            if( (start < 1000) or (end > self.chrom_lens[chrom] + 1000) ):
-                # We are too close to the edges of the chromosome
-                # So we create a dummy point with all 0s
-                # Since X and Y are aleady 0s, we do nothing
-                pass
-            else:
-                random_cell_type = CELL_TYPES[0] # Fix cell type for testing
-                if(self.mode == 'train'):
-                    # Randomly sample a cell type
-                    random_cell_type = CELL_TYPES[random_cell_type_index]
+		if( (start < 1000) or (end > self.chrom_lens[chrom] + 1000) ):
+			# We are too close to the edges of the chromosome
+			# So we create a dummy point with all 0s
+			# Since X and Y are aleady 0s, we do nothing
+			pass
+		else:
+			random_cell_type = CELL_TYPES[0] # Fix cell type for testing
+			if(self.mode == 'train'):
+				# Randomly sample a cell type
+				random_cell_type = CELL_TYPES[random_cell_type_index]
 
-		    	Y[i] = self.data[chrom][random_cell_type][:, start:end]
-		    	X[i] = create_masked(Y[i])
+			Y[i] = self.data[chrom][random_cell_type][:, start:end]
+			X[i] = create_masked(Y[i])
 
-        return X, Y
+		return X, Y
