@@ -18,7 +18,7 @@ ASSAY_TYPES = ["A02", "A03", "A04", "A05", "A06", "A07"]
 
 training_chroms = ["chr16"]
 
-MASK_VALUE = 0
+MASK_VALUE = -1
 
 def preprocess_data(data):
 
@@ -126,6 +126,11 @@ class DataGenerator(Sequence):
 				x = create_masked(y)
 
 				# print(x, y)
+
+				# Transpose both x and y so that input has dimensions
+				# window_size x len(ASSAY_TYPES)
+				x = np.transpose(x)
+				y = np.transpose(y)
 
 				X[i] = np.expand_dims(x, axis=2)
 				Y[i] = np.expand_dims(y, axis=2)

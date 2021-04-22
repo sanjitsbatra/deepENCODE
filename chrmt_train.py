@@ -52,7 +52,6 @@ def ResidualUnit(conv_kernel_size, num_filters, padding):
 
 
 # Compute an MSE loss only at those positions that are 0
-# TODO: Will this work if yTrue and yPred are 2/3-dimensional? 
 def custom_loss(yTrue, yPred):
 	print(yPred)
 
@@ -70,7 +69,7 @@ def create_cnn(number_of_assays,
 			conv_kernel_size, 
 			num_convolutions, 
 			padding):
-	inputs = Input(shape=(number_of_assays, window_size, 1), name='input') 
+	inputs = Input(shape=(window_size, number_of_assays), name='input') 
 
 	'''
 	print("Initial", inputs)
@@ -95,8 +94,8 @@ def create_cnn(number_of_assays,
 
 	# Final convolution
 	outputs = Conv2D(kernel_size=conv_kernel_size,
-            filters=1,
-            padding=padding)(inputs)
+					filters=1,
+					padding=padding)(inputs)
 
 	print("After final", outputs)
 	K.print_tensor(outputs, message='After final')
