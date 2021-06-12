@@ -10,6 +10,7 @@ from tensorflow.python.keras.utils.data_utils import Sequence
 import sys
 from random import randrange
 
+
 DATA_FOLDER = '/scratch/sanjit/ENCODE_Imputation_Challenge/2_April_2020/Data/100bp_12_7_Data_20_July_2020' 
 
 CELL_TYPES = ["T01", "T05"]
@@ -20,6 +21,7 @@ training_chroms = ["chr16"]
 
 MASK_VALUE = 0
 
+
 def preprocess_data(data):
 
 	return np.log1p(data)
@@ -27,11 +29,11 @@ def preprocess_data(data):
 
 def create_masked(x):
 
-	# dimensions are len(ASSAY_TYPES) x window_size 
+	# dimensions are window_size x len(ASSAY_TYPES)
 	# we mask out some portions by setting them to mask_value
-	for i in range(x.shape[1]):
+	for i in range(x.shape[0]):
 		if(np.random.uniform(low=0.0, high=1.0) < 0.95):
-			x[:, i] = MASK_VALUE
+			x[i, :] = MASK_VALUE
 
 	return x
 
@@ -51,7 +53,7 @@ class DataGenerator(Sequence):
 		for chrom in training_chroms:
 			for cell_type in CELL_TYPES:
 				data = []
-				for assay_type in ASSAY_TYPES:								
+				for assay_type in ASSAY_TYPES:
 					fname = cell_type+""+assay_type+"."+chrom+".npy"
 					fname = DATA_FOLDER+"/"+fname
 					if(isfile(fname)):
@@ -89,9 +91,9 @@ class DataGenerator(Sequence):
 		if self.shuffle:
 			np.random.shuffle(self.idxs)
 
-	
+
 	def idx_to_chrom_and_start(self, idx):
-		
+
 		chr_idx = np.where(self.tot_len_list > idx)[0][0]
 		chrom = self.chrom_list[chr_idx]
 		start = idx if chr_idx == 0 else idx - self.tot_len_list[chr_idx - 1]
@@ -100,8 +102,8 @@ class DataGenerator(Sequence):
 
 	def __getitem__(self, batch_number):
 
-		X = np.zeros((self.batch_size, len(ASSAY_TYPES), self.window_size, 1))
-		Y = np.zeros((self.batch_size, len(ASSAY_TYPES), self.window_size, 1))
+		X = np.zeros((self.batch_size, self.window_size, len(ASSAY_TYPES)))
+		Y = np.zeros((self.batch_size, self.window_size, len(ASSAY_TYPES)))
 
 		for i in range(self.batch_size):
 			idx = self.idxs[batch_number * self.batch_size + i]
@@ -122,12 +124,12 @@ class DataGenerator(Sequence):
 					random_cell_type_index = 0 # Fix cell type for testing
 				random_cell_type = CELL_TYPES[random_cell_type_index]
 
-				y = self.data[chrom][random_cell_type][:, start:end]							
+				y = np.transpose(self.data[chrom][random_cell_type][:,start:end])
 				x = create_masked(y)
 
-				# print(x, y)
+				# print(x.shape, y.shape)
 
-				X[i] = np.expand_dims(x, axis=2)
-				Y[i] = np.expand_dims(y, axis=2)
+				X[i] = x
+				Y[i] = y
 				
 		return X, Y

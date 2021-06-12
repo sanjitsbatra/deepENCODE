@@ -33,7 +33,7 @@ def BACUnit(conv_kernel_size, num_filters, padding):
 	def f(input_node):
 		bn = BatchNormalization()(input_node)
 		act = Activation('relu')(bn)
-		output_node = Conv2D(kernel_size=conv_kernel_size, 
+		output_node = Conv1D(kernel_size=conv_kernel_size, 
 							filters=num_filters, 
 							padding=padding)(act)
 		return output_node
@@ -70,14 +70,13 @@ def create_cnn(number_of_assays,
 			conv_kernel_size, 
 			num_convolutions, 
 			padding):
-	inputs = Input(shape=(number_of_assays, window_size, 1), name='input') 
+	inputs = Input(shape=(window_size, number_of_assays), name='input') 
 
-	'''
 	print("Initial", inputs)
 
-	
+	x = inputs
 	# Initial convolution
-	x = Conv2D(kernel_size=conv_kernel_size, 
+	x = Conv1D(kernel_size=conv_kernel_size, 
 			filters=num_filters, 
 			padding=padding)(x)
 
@@ -86,17 +85,16 @@ def create_cnn(number_of_assays,
 	# Perform multiple convolutional layers
 	for i in range(num_convolutions):
 		# x = ResidualUnit(conv_kernel_size, num_filters, padding)(x)
-		x = Conv2D(kernel_size=conv_kernel_size,
+		x = Conv1D(kernel_size=conv_kernel_size,
 					filters=num_filters,
 					padding=padding)(x)
 
 	print("After multiple", x)
-	'''
 
 	# Final convolution
-	outputs = Conv2D(kernel_size=conv_kernel_size,
-            filters=1,
-            padding=padding)(inputs)
+	outputs = Conv1D(kernel_size=conv_kernel_size,
+				filters=number_of_assays,
+				padding=padding)(x)
 
 	print("After final", outputs)
 	K.print_tensor(outputs, message='After final')
@@ -115,7 +113,7 @@ if __name__ == '__main__':
 	window_size = int(sys.argv[2]) # => Length of window / 100bp 
 	batch_size = int(sys.argv[3])
 	num_filters = int(sys.argv[4])
-	conv_kernel_size = (3, 3)
+	conv_kernel_size = 7
 	num_convolutions = 2
 	padding = 'same'
 
