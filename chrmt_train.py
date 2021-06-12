@@ -52,7 +52,6 @@ def ResidualUnit(conv_kernel_size, num_filters, padding):
 
 
 # Compute an MSE loss only at those positions that are 0
-# TODO: Will this work if yTrue and yPred are 2/3-dimensional? 
 def custom_loss(yTrue, yPred):
 	print(yPred)
 

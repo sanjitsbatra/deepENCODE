@@ -19,7 +19,7 @@ ASSAY_TYPES = ["A02", "A03", "A04", "A05", "A06", "A07"]
 
 training_chroms = ["chr16"]
 
-MASK_VALUE = 0
+MASK_VALUE = -1
 
 
 def preprocess_data(data):
@@ -131,5 +131,5 @@ class DataGenerator(Sequence):
 
 				X[i] = x
 				Y[i] = y
-				
+
 		return X, Y
