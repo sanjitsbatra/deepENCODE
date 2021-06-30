@@ -17,7 +17,7 @@ CELL_TYPES = ["T01", "T05"]
 
 ASSAY_TYPES = ["A02", "A03", "A04", "A05", "A06", "A07"]
 
-training_chroms = ["chr16"]
+training_chroms = ["chr"+str(i) for i in range(1,22,2)] 
 
 MASK_VALUE = -1
 
@@ -114,6 +114,7 @@ class DataGenerator(Sequence):
 				# We are too close to the edges of the chromosome
 				# So we create a dummy point with all 0s
 				# Since X and Y are aleady 0s, we do nothing
+				# TODO: this resets loss; needs to be removed from training
 				print("We are too close to the edge!", file=sys.stderr)
 				pass
 			else:
@@ -124,6 +125,8 @@ class DataGenerator(Sequence):
 					random_cell_type_index = 0 # Fix cell type for testing
 				random_cell_type = CELL_TYPES[random_cell_type_index]
 
+				# TODO: remove this transpose
+				# TODO: add assert on size to make sure it's always consistent
 				y = np.transpose(self.data[chrom][random_cell_type][:,start:end])
 				x = create_masked(y)
 

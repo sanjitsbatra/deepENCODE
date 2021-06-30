@@ -83,10 +83,10 @@ def create_cnn(number_of_assays,
 
 	# Perform multiple convolutional layers
 	for i in range(num_convolutions):
-		# x = ResidualUnit(conv_kernel_size, num_filters, padding)(x)
-		x = Conv1D(kernel_size=conv_kernel_size,
-					filters=num_filters,
-					padding=padding)(x)
+		x = ResidualUnit(conv_kernel_size, num_filters, padding)(x)
+		# x = Conv1D(kernel_size=conv_kernel_size,
+		# 			filters=num_filters,
+		# 			padding=padding)(x)
 
 	print("After multiple", x)
 
@@ -113,10 +113,10 @@ if __name__ == '__main__':
 	batch_size = int(sys.argv[3])
 	num_filters = int(sys.argv[4])
 	conv_kernel_size = 7
-	num_convolutions = 2
+	num_convolutions = int(sys.argv[5])
 	padding = 'same'
 
-	run_name = run_name_prefix+"_"+str(window_size)+"_"+str(num_filters)
+	run_name = run_name_prefix+"_"+str(window_size)+"_"+str(num_filters)+"_"+str(num_convolutions)
 
 	tensorflow.enable_eager_execution()
 
@@ -131,6 +131,8 @@ if __name__ == '__main__':
 					conv_kernel_size, 
 					num_convolutions, 
 					'same')
+	checkpoint = ModelCheckpoint(run_name+"."+"model-{epoch:02d}.hdf5",
+								verbose=0, save_best_only=False)
 	lr_schedule = LearningRateScheduler(lr_scheduler)
 	model.compile(loss='mse', optimizer=Adam(clipnorm=1.), run_eagerly=True)
 	print(model.summary())
@@ -138,7 +140,7 @@ if __name__ == '__main__':
 	model.fit_generator(train_generator, 
 						epochs=epochs,
 						steps_per_epoch=steps_per_epoch,
-						callbacks=[lr_schedule],
+						callbacks=[checkpoint, lr_schedule],
 						use_multiprocessing=False, 
 						verbose=2)
 
