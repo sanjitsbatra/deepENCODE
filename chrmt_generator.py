@@ -11,13 +11,13 @@ import sys
 from random import randrange
 
 
-DATA_FOLDER = '/scratch/sanjit/ENCODE_Imputation_Challenge/2_April_2020/Data/100bp_12_7_Data_20_July_2020' 
+DATA_FOLDER = '..//Data/100bp_12_7_Data_20_July_2020' 
 
 CELL_TYPES = ["T01", "T05"]
 
 ASSAY_TYPES = ["A02", "A03", "A04", "A05", "A06", "A07"]
 
-training_chroms = ["chr"+str(i) for i in range(1,22,2)] 
+training_chroms = ["chr"+str(i) for i in range(18,22,2)] 
 
 MASK_VALUE = -1
 

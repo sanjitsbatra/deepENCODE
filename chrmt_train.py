@@ -118,7 +118,7 @@ if __name__ == '__main__':
 
 	run_name = run_name_prefix+"_"+str(window_size)+"_"+str(num_filters)+"_"+str(num_convolutions)
 
-	tensorflow.enable_eager_execution()
+	# tensorflow.enable_eager_execution()
 
 	train_generator = DataGenerator(window_size, 
 							batch_size, 
