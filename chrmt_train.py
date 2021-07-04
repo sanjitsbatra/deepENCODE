@@ -3,10 +3,8 @@ import os
 from chrmt_generator import DataGenerator, ASSAY_TYPES, MASK_VALUE
 from keras.callbacks import LearningRateScheduler
 from tensorflow.keras.models import Model
-# from tensorflow.keras.layers import BatchNormalization, Input, add
+from tensorflow.keras.layers import BatchNormalization, Activation
 from tensorflow.keras.layers import Conv1D, Input
-# from tensorflow.keras.layers import Activation, Dropout, Dense, Flatten
-# from tensorflow.keras import optimizers
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.callbacks import ModelCheckpoint
 from keras import backend as K
@@ -14,7 +12,7 @@ from keras import backend as K
 
 
 def lr_scheduler(epoch):
-    if epoch < 10:
+    if epoch < 5:
         return 2e-3
     elif epoch < 90:
         return 1e-3
@@ -22,7 +20,7 @@ def lr_scheduler(epoch):
         return 5e-4
 
 
-# Compute an MSE loss only at those positions that are 0
+# Compute an MSE loss only at those positions that are MASK_VALUE
 def custom_loss(yTrue, yPred):
     print(yPred)
 
@@ -45,7 +43,10 @@ def create_cnn(number_of_assays,
     print("Initial", inputs)
 
     x = inputs
+
     # Initial convolution
+    x = BatchNormalization()(x)
+    x = Activation('relu')(x)
     x = Conv1D(kernel_size=conv_kernel_size,
                filters=num_filters,
                padding=padding)(x)
@@ -54,6 +55,8 @@ def create_cnn(number_of_assays,
 
     # Perform multiple convolutional layers
     for i in range(num_convolutions):
+        x = BatchNormalization()(x)
+        x = Activation('relu')(x)
         x = Conv1D(kernel_size=conv_kernel_size,
                    filters=num_filters,
                    padding=padding)(x)
@@ -61,6 +64,8 @@ def create_cnn(number_of_assays,
     print("After multiple", x)
 
     # Final convolution
+    x = BatchNormalization()(x)
+    x = Activation('relu')(x)
     outputs = Conv1D(kernel_size=conv_kernel_size,
                      filters=number_of_assays,
                      padding=padding)(x)
@@ -85,16 +90,24 @@ if __name__ == '__main__':
     conv_kernel_size = 7
     num_convolutions = int(sys.argv[5])
     padding = 'same'
+    masking_prob = float(sys.argv[6])
 
     run_name = (run_name_prefix + "_" + str(window_size) +
                 "_" + str(num_filters) + "_" + str(num_convolutions))
 
     # tensorflow.enable_eager_execution()
 
-    train_generator = DataGenerator(window_size,
-                                    batch_size,
-                                    shuffle=True,
-                                    mode='train')
+    training_generator = DataGenerator(window_size,
+                                       batch_size,
+                                       shuffle=True,
+                                       mode='train',
+                                       masking_probability=masking_prob)
+
+    validation_generator = DataGenerator(window_size,
+                                         batch_size,
+                                         shuffle=True,
+                                         mode='validation',
+                                         masking_probability=masking_prob)
 
     model = create_cnn(len(ASSAY_TYPES),
                        window_size,
@@ -102,17 +115,20 @@ if __name__ == '__main__':
                        conv_kernel_size,
                        num_convolutions,
                        'same')
+
     checkpoint = ModelCheckpoint(run_name+"."+"model-{epoch:02d}.hdf5",
                                  verbose=0, save_best_only=False)
+
     lr_schedule = LearningRateScheduler(lr_scheduler)
     model.compile(loss='mse', optimizer=Adam(clipnorm=1.), run_eagerly=True)
     print(model.summary())
 
-    model.fit_generator(train_generator,
-                        epochs=epochs,
-                        steps_per_epoch=steps_per_epoch,
-                        callbacks=[checkpoint, lr_schedule],
-                        use_multiprocessing=False,
-                        verbose=2)
+    model.fit(x=training_generator,
+              epochs=epochs,
+              verbose=2,
+              callbacks=[checkpoint, lr_schedule],
+              validation_data=validation_generator,
+              validation_steps=steps_per_epoch,
+              steps_per_epoch=steps_per_epoch)
 
     os._exit(1)

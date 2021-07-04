@@ -17,7 +17,8 @@ CELL_TYPES = ["T01", "T05"]
 
 ASSAY_TYPES = ["A02", "A03", "A04", "A05", "A06", "A07"]
 
-training_chroms = ["chr"+str(i) for i in range(18, 22, 2)]
+training_chroms = ["chr"+str(i) for i in range(11, 17, 2)]
+validation_chroms = ["chr"+str(i) for i in range(12, 17, 2)]
 
 MASK_VALUE = -1
 
@@ -27,12 +28,12 @@ def preprocess_data(data):
     return np.log1p(data)
 
 
-def create_masked(x):
+def create_masked(x, p):
 
     # dimensions are window_size x len(ASSAY_TYPES)
     # we mask out some portions by setting them to mask_value
     for i in range(x.shape[0]):
-        if(np.random.uniform(low=0.0, high=1.0) < 0.95):
+        if(np.random.uniform(low=0.0, high=1.0) < p):
             x[i, :] = MASK_VALUE
 
     return x
@@ -40,17 +41,24 @@ def create_masked(x):
 
 class DataGenerator(Sequence):
 
-    def __init__(self, window_size, batch_size, shuffle=True, mode=''):
+    def __init__(self, window_size, batch_size,
+                 shuffle=True, mode='', masking_probability=0.2):
 
         self.window_size = window_size
         self.batch_size = batch_size
         self.shuffle = shuffle
         self.mode = mode
+        self.masking_probability = masking_probability
 
         self.data = {}
         self.chrom_lens = {}
 
-        for chrom in training_chroms:
+        if(self.mode == 'train'):
+            self.chroms = training_chroms
+        elif(self.mode == 'validation'):
+            self.chroms = validation_chroms
+
+        for chrom in self.chroms:
             for cell_type in CELL_TYPES:
                 data = []
                 for assay_type in ASSAY_TYPES:
@@ -92,8 +100,19 @@ class DataGenerator(Sequence):
 
         chr_idx = np.where(self.tot_len_list > idx)[0][0]
         chrom = self.chrom_list[chr_idx]
-        start = idx if chr_idx == 0 else idx - self.tot_len_list[chr_idx - 1]
-        return chrom, start
+
+        d = -1
+        if(chr_idx == 0):
+            d = idx
+        else:
+            d = idx - self.tot_len_list[chr_idx - 1]
+
+        # Make sure that we're not too close to the edge of the chromosome
+        if (d < 1000):
+            start = d + 1000
+        else:
+            start = d
+        return chrom, start, d
 
     def __getitem__(self, batch_number):
 
@@ -102,18 +121,20 @@ class DataGenerator(Sequence):
 
         for i in range(self.batch_size):
             idx = self.idxs[batch_number * self.batch_size + i]
-            chrom, start = self.idx_to_chrom_and_start(idx)
+            chrom, start, d = self.idx_to_chrom_and_start(idx)
             end = start + self.window_size
 
             if((start < 1000) or (end > self.chrom_lens[chrom] + 1000)):
                 # We are too close to the edges of the chromosome
                 # So we create a dummy point with all 0s
                 # Since X and Y are aleady 0s, we do nothing
-                # TODO: this resets loss; needs to be removed from training
-                print("We are too close to the edge!", file=sys.stderr)
-                pass
+                print("We are too close to the edge!",
+                      batch_number, idx, chrom, start, d,
+                      end, self.chrom_lens[chrom],
+                      file=sys.stderr)
+                # pass
             else:
-                if(self.mode == 'train'):
+                if((self.mode == 'train') or (self.mode == 'validation')):
                     # Randomly sample a cell type
                     random_cell_type_index = randrange(len(CELL_TYPES))
                 else:
@@ -125,9 +146,10 @@ class DataGenerator(Sequence):
                 y = self.data[chrom][random_cell_type][:, start:end]
                 y = np.transpose(y)
 
-                x = create_masked(y)
+                x = create_masked(y, self.masking_probability)
 
-                # print(x.shape, y.shape)
+                if(x.shape[0] != self.window_size):
+                    print(chrom, start, end, x.shape, y.shape, file=sys.stderr)
 
                 X[i] = x
                 Y[i] = y
