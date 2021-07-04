@@ -13,14 +13,14 @@ from random import randrange
 
 DATA_FOLDER = '../Data/100bp_12_7_Data_20_July_2020'
 
-CELL_TYPES = ["T01", "T05"]
+CELL_TYPES = ["T01"]
 
 ASSAY_TYPES = ["A02", "A03", "A04", "A05", "A06", "A07"]
 
-training_chroms = ["chr"+str(i) for i in range(11, 17, 2)]
-validation_chroms = ["chr"+str(i) for i in range(12, 17, 2)]
+training_chroms = ["chr"+str(i) for i in range(15, 17, 2)]
+validation_chroms = ["chr"+str(i) for i in range(16, 17, 2)]
 
-MASK_VALUE = -1
+MASK_VALUE = -10
 
 
 def preprocess_data(data):

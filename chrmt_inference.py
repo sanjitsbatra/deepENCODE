@@ -1,38 +1,42 @@
-import sys, os
+import os
+import sys
 import numpy as np
-import tensorflow, keras
+import tensorflow
+import keras
 from chrmt.generator import DataGenerator
 import h5py
 import pandas as pd
 from keras.models import load_model
 from utils import lr_scheduler, clean_up_models
 from keras.callbacks import LearningRateScheduler
+from tqdm import tqdm
 
 
 if __name__ == '__main__':
 
-	run_name_prefix = sys.argv[1]
-	window_size = int(sys.argv[2]) # => Length of window / 100bp 
-	batch_size = int(sys.argv[3])
-	num_filters = int(sys.argv[4])
+    run_name_prefix = sys.argv[1]
+    window_size = int(sys.argv[2])  # => Length of window / 100bp
+    batch_size = int(sys.argv[3])
+    num_filters = int(sys.argv[4])
 
-	run_name = run_name_prefix+"_"+str(window_size)+"_"+str(num_filters)
+    run_name = run_name_prefix+"_"+str(window_size)+"_"+str(num_filters)
 
-	test_generator = DataGenerator(window_size, 
-							batch_size, 
-							shuffle=False, 
-							mode='test')
+    test_generator = DataGenerator(window_size,
+                                   batch_size,
+                                   shuffle=False,
+                                   mode='test')
 
-	final_model = load_model()
-	print(model.summary())
+    final_model = load_model()
+    print(model.summary())
 
-	for i in tqdm(range(len(test_generator)):
+    for i in tqdm(range(len(test_generator))):
 
-		X_ref, Y = gen_ref.__getitem__(i)
-		X_alt, Y = gen_alt.__getitem__(i)
+        X_ref, Y = gen_ref.__getitem__(i)
+        X_alt, Y = gen_alt.__getitem__(i)
 
-		score_ref[i * args.batch_size:(i + 1) * args.batch_size] = model.predict(X_ref).mean(axis=(1, 2))
-		score_alt[i * args.batch_size:(i + 1) * args.batch_size] = model.predict(X_alt).mean(axis=(1, 2))
+        score_ref[i * args.batch_size:(i + 1) * args.batch_size]
+        = model.predict(X_ref).mean(axis=(1, 2))
+        score_alt[i * args.batch_size:(i + 1) * args.batch_size]
+        = model.predict(X_alt).mean(axis=(1, 2))
 
-	os._exit(1)
-
+    os._exit(1)

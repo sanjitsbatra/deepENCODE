@@ -7,7 +7,8 @@ from tensorflow.keras.layers import BatchNormalization, Activation
 from tensorflow.keras.layers import Conv1D, Input
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.callbacks import ModelCheckpoint
-from keras import backend as K
+from tensorflow.keras import backend as K
+import tensorflow as tf
 # from tqdm import tqdm
 
 
@@ -30,6 +31,14 @@ def custom_loss(yTrue, yPred):
 
     loss = K.square(yTrue-yPred) * masked_indices
     return K.sum(loss, axis=-1) / K.sum(masked_indices, axis=-1)
+
+
+'''
+def _logcosh(x):
+return x + math_ops.softplus(-2. * x) - math_ops.cast(
+math_ops.log(2.), x.dtype)
+return backend.mean(_logcosh(y_pred - y_true), axis=-1)
+'''
 
 
 def create_cnn(number_of_assays,
@@ -71,7 +80,6 @@ def create_cnn(number_of_assays,
                      padding=padding)(x)
 
     print("After final", outputs)
-    K.print_tensor(outputs, message='After final')
 
     # construct the CNN
     model = Model(inputs=inputs, outputs=outputs)
@@ -95,7 +103,9 @@ if __name__ == '__main__':
     run_name = (run_name_prefix + "_" + str(window_size) +
                 "_" + str(num_filters) + "_" + str(num_convolutions))
 
-    # tensorflow.enable_eager_execution()
+    # tf.disable_v2_behavior()
+    # tf.compat.v1.keras.backend.get_session()
+    # tf.disable_eager_execution()
 
     training_generator = DataGenerator(window_size,
                                        batch_size,
@@ -120,7 +130,10 @@ if __name__ == '__main__':
                                  verbose=0, save_best_only=False)
 
     lr_schedule = LearningRateScheduler(lr_scheduler)
-    model.compile(loss='mse', optimizer=Adam(clipnorm=1.), run_eagerly=True)
+    model.compile(loss=custom_loss,
+                  optimizer=Adam(clipnorm=1.))
+                  # run_eagerly=True)
+
     print(model.summary())
 
     model.fit(x=training_generator,
