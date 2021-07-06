@@ -9,18 +9,38 @@ from os.path import isfile
 from tensorflow.python.keras.utils.data_utils import Sequence
 import sys
 from random import randrange
+import pyranges as pr
 
 
 DATA_FOLDER = '../Data/100bp_12_7_Data_20_July_2020'
 
-CELL_TYPES = ["T01"]
+CELL_TYPES = ["T" + "{0:0=2d}".format(i) for i in range(1, 13)]
 
-ASSAY_TYPES = ["A02", "A03", "A04", "A05", "A06", "A07"]
+ASSAY_TYPES = ["A" + "{0:0=2d}".format(i) for i in range(2, 8)]
 
-training_chroms = ["chr"+str(i) for i in range(15, 17, 2)]
-validation_chroms = ["chr"+str(i) for i in range(16, 17, 2)]
+training_chroms = ["chr"+str(i) for i in range(1, 23, 2)]
+validation_chroms = ["chr"+str(i) for i in range(2, 23, 2)]
 
-MASK_VALUE = -1
+MASK_VALUE = -10
+
+EDGE_CUSHION = 1000  # corresponds to 100Kb from the edge of chromosomes
+
+
+# We don't want to train in regions that are Blacklisted or have Gaps
+Blacklisted_Regions = pr.read_bed('../Data/hg38.Blacklisted.bed', as_df=False)
+Gap_Regions = pr.read_bed('../Data/hg38.Gaps.bed', as_df=False)
+
+
+def check_region(chrom, start, end):
+    # Since we are working at 100bp resolution
+    start = int(start*1.0 * 100.0)
+    end = int(end*1.0 * 100.0)
+
+    if(len(Blacklisted_Regions[chrom, start:end]) +
+       len(Gap_Regions[chrom, start:end]) > 0):
+        return "bad"
+    else:
+        return "good"
 
 
 def preprocess_data(data):
@@ -38,10 +58,13 @@ def create_masked(x, p):
             counter += 1
             x[i, :] = MASK_VALUE
 
+    '''
+    # This can be used to debug how many entries are masked
     if(counter == 0):
-        print("No entries have been masked")
+        print("No entries have been masked", file=sys.stderr)
     elif(counter == x.shape[0]):
-        print("All entries have been masked")
+        print("All entries have been masked", file=sys.stderr)
+    '''
 
     return x
 
@@ -94,14 +117,19 @@ class DataGenerator(Sequence):
         self.tot_len_list = np.cumsum(self.tot_len_list)
         self.idxs = np.arange(self.tot_len_list[-1])
 
-    def __len__(self):
-
-        return self.tot_len_list[-1] // self.batch_size
-
+    # Apparently Keras doesn't call this at the end of every epoch!!!
     def on_epoch_end(self):
 
         if self.shuffle:
             np.random.shuffle(self.idxs)
+
+    # So we have to call shuffle inside len which is called after every epoch!
+    def __len__(self):
+
+        if self.shuffle:
+            np.random.shuffle(self.idxs)
+
+        return self.tot_len_list[-1] // self.batch_size
 
     def idx_to_chrom_and_start(self, idx):
 
@@ -113,12 +141,19 @@ class DataGenerator(Sequence):
             d = idx
         else:
             d = idx - self.tot_len_list[chr_idx - 1]
+        start = d
 
+        # This is already handled downstream
+        '''
         # Make sure that we're not too close to the edge of the chromosome
-        if (d < 1000):
-            start = d + 1000
+        if (d < EDGE_CUSHION):
+            start = d + EDGE_CUSHION
+        elif(d > self.chrom_lens[chrom] - EDGE_CUSHION):
+            start = d - EDGE_CUSHION
         else:
             start = d
+        '''
+
         return chrom, start, d
 
     def __getitem__(self, batch_number):
@@ -131,19 +166,41 @@ class DataGenerator(Sequence):
             chrom, start, d = self.idx_to_chrom_and_start(idx)
             end = start + self.window_size
 
-            if((start < 1000) or (end > self.chrom_lens[chrom] + 1000)):
+            # Very useful for debugging!
+            # print("Batch Number", batch_number, chrom, start, end,
+            #        file=sys.stderr)
+
+            if((start < EDGE_CUSHION) or
+               (end > self.chrom_lens[chrom] - EDGE_CUSHION)):
                 # We are too close to the edges of the chromosome
-                # So we create a dummy point with all 0s
+                # So we create the i'th data point to be a dummy with all 0s
                 # Since X and Y are aleady 0s, we do nothing
+                '''
                 print("We are too close to the edge!",
                       batch_number, idx, chrom, start, d,
                       end, self.chrom_lens[chrom],
                       file=sys.stderr)
+                '''
+                pass
+            # TODO: This slows down training significantly
+            # elif(check_region(chrom, start, end) == "bad"):
+                # The training data point either lies in
+                # a Blacklisted Region or a Gap Region in hg38
+                # So we create the i'th data point to be a dummy with all 0s
+                # Since X and Y are aleady 0s, we do nothing
+                '''
+                print("Data point in Blacklisted or Gap region",
+                      batch_number, idx, chrom, start, d,
+                      end, self.chrom_lens[chrom],
+                      file=sys.stderr)
+                '''
                 # pass
             else:
                 if((self.mode == 'train') or (self.mode == 'validation')):
                     # Randomly sample a cell type
                     random_cell_type_index = randrange(len(CELL_TYPES))
+                    # print("Sampled cell type", random_cell_type_index,
+                    #       "for training", file=sys.stderr)
                 else:
                     random_cell_type_index = 0  # Fix cell type for testing
                 random_cell_type = CELL_TYPES[random_cell_type_index]
@@ -155,8 +212,12 @@ class DataGenerator(Sequence):
 
                 x = create_masked(y, self.masking_probability)
 
+                '''
                 if(x.shape[0] != self.window_size):
-                    print(chrom, start, end, x.shape, y.shape, file=sys.stderr)
+                    print("Found the wrong shape!",
+                          chrom, start, end, x.shape, y.shape,
+                          file=sys.stderr)
+                '''
 
                 X[i] = x
                 Y[i] = y

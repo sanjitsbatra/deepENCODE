@@ -4,17 +4,19 @@ from chrmt_generator import DataGenerator, ASSAY_TYPES, MASK_VALUE
 from tensorflow.keras.callbacks import LearningRateScheduler
 from tensorflow.keras.models import Model
 from tensorflow.keras.layers import BatchNormalization, Activation
-from tensorflow.keras.layers import Conv1D, Input
+from tensorflow.keras.layers import Conv1D, Input, add
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.callbacks import ModelCheckpoint
 from keras import backend as K
-# from tqdm import tqdm
+from tqdm.keras import TqdmCallback
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 
 EPS = 0.0001
 
 
 def lr_scheduler(epoch):
+
     if epoch < 5:
         return 2e-3
     elif epoch < 90:
@@ -25,20 +27,46 @@ def lr_scheduler(epoch):
 
 # Compute an MSE loss only at those positions that are MASK_VALUE
 def custom_loss(yTrue, yPred):
-    print(yPred)
 
     masked_indices = K.tf.where(K.tf.equal(yTrue, MASK_VALUE),
                                 K.tf.ones_like(yTrue),
                                 K.tf.zeros_like(yTrue))
 
+    '''
+    # MSE loss
     loss = K.square(yTrue-yPred) * masked_indices
-    return K.sum(loss, axis=-1) / (K.sum(masked_indices, axis=-1) + EPS)
+    mse_loss = K.sum(loss, axis=-1) / (K.sum(masked_indices, axis=-1) + EPS)
+    print(mse_loss, file=sys.stderr)
+    '''
+
+    # logcosh loss
+    def _logcosh(x):
+        return x + K.softplus(-2. * x) - K.log(2.)
+
+    logcosh_loss = K.mean(_logcosh((yTrue - yPred) * masked_indices) + EPS,
+                          axis=-1)
+
+    return logcosh_loss
 
 
-# def _logcosh(x):
-# return x + math_ops.softplus(-2. * x) - math_ops.cast(
-# math_ops.log(2.), x.dtype)
-# return backend.mean(_logcosh(y_pred - y_true), axis=-1)
+def BAC(x_input, conv_kernel_size, num_filters):
+
+    x_output = BatchNormalization()(x_input)
+    x_output = Activation('relu')(x_output)
+    x_output = Conv1D(kernel_size=conv_kernel_size,
+                      filters=num_filters,
+                      padding='same')(x_output)
+
+    return x_output
+
+
+def residual_block(x, conv_kernel_size, num_filters):
+
+    x_1 = BAC(x, conv_kernel_size, num_filters)
+    x_2 = BAC(x_1, conv_kernel_size, num_filters)
+    output = add([x, x_2])
+
+    return output
 
 
 def create_cnn(number_of_assays,
@@ -47,55 +75,37 @@ def create_cnn(number_of_assays,
                conv_kernel_size,
                num_convolutions,
                padding):
+
     inputs = Input(shape=(window_size, number_of_assays), name='input')
 
-    print("Initial", inputs)
-
-    x = inputs
+    assert(padding == "same")
 
     # Initial convolution
-    x = BatchNormalization()(x)
-    x = Activation('relu')(x)
-    x = Conv1D(kernel_size=conv_kernel_size,
-               filters=num_filters,
-               padding=padding)(x)
-
-    print("After initial", x)
+    x = BAC(inputs, conv_kernel_size, num_filters)
 
     # Perform multiple convolutional layers
     for i in range(num_convolutions):
-        x = BatchNormalization()(x)
-        x = Activation('relu')(x)
-        x = Conv1D(kernel_size=conv_kernel_size,
-                   filters=num_filters,
-                   padding=padding)(x)
-
-    print("After multiple", x)
+        x = residual_block(x, conv_kernel_size, num_filters)
 
     # Final convolution
-    x = BatchNormalization()(x)
-    x = Activation('relu')(x)
-    outputs = Conv1D(kernel_size=conv_kernel_size,
-                     filters=number_of_assays,
-                     padding=padding)(x)
-
-    print("After final", outputs)
+    outputs = BAC(x, conv_kernel_size, number_of_assays)
 
     # construct the CNN
     model = Model(inputs=inputs, outputs=outputs)
+
     return model
 
 
 if __name__ == '__main__':
 
-    epochs = 100
+    epochs = 1000
     steps_per_epoch = 100
 
     run_name_prefix = sys.argv[1]
     window_size = int(sys.argv[2])  # => Length of window / 100bp
     batch_size = int(sys.argv[3])
     num_filters = int(sys.argv[4])
-    conv_kernel_size = 7
+    conv_kernel_size = 11
     num_convolutions = int(sys.argv[5])
     padding = 'same'
     masking_prob = float(sys.argv[6])
@@ -130,6 +140,15 @@ if __name__ == '__main__':
                                  verbose=0, save_best_only=False)
 
     lr_schedule = LearningRateScheduler(lr_scheduler)
+
+    tqdm_keras = TqdmCallback(verbose=0)
+    setattr(tqdm_keras, 'on_train_batch_begin', lambda x, y: None)
+    setattr(tqdm_keras, 'on_train_batch_end', lambda x, y: None)
+    setattr(tqdm_keras, 'on_test_begin', lambda x: None)
+    setattr(tqdm_keras, 'on_test_end', lambda x: None)
+    setattr(tqdm_keras, 'on_test_batch_begin', lambda x, y: None)
+    setattr(tqdm_keras, 'on_test_batch_end', lambda x, y: None)
+
     model.compile(loss=custom_loss,
                   optimizer=Adam(clipnorm=1.),
                   run_eagerly=False)
@@ -138,8 +157,8 @@ if __name__ == '__main__':
 
     model.fit(x=training_generator,
               epochs=epochs,
-              verbose=2,
-              callbacks=[checkpoint, lr_schedule],
+              verbose=0,
+              callbacks=[checkpoint, lr_schedule, tqdm_keras],
               validation_data=validation_generator,
               validation_steps=steps_per_epoch,
               steps_per_epoch=steps_per_epoch)
