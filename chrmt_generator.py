@@ -20,7 +20,7 @@ ASSAY_TYPES = ["A02", "A03", "A04", "A05", "A06", "A07"]
 training_chroms = ["chr"+str(i) for i in range(15, 17, 2)]
 validation_chroms = ["chr"+str(i) for i in range(16, 17, 2)]
 
-MASK_VALUE = -10
+MASK_VALUE = -1
 
 
 def preprocess_data(data):
@@ -32,9 +32,16 @@ def create_masked(x, p):
 
     # dimensions are window_size x len(ASSAY_TYPES)
     # we mask out some portions by setting them to mask_value
+    counter = 0
     for i in range(x.shape[0]):
         if(np.random.uniform(low=0.0, high=1.0) < p):
+            counter += 1
             x[i, :] = MASK_VALUE
+
+    if(counter == 0):
+        print("No entries have been masked")
+    elif(counter == x.shape[0]):
+        print("All entries have been masked")
 
     return x
 
