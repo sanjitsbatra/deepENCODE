@@ -20,6 +20,7 @@ ASSAY_TYPES = ["A" + "{0:0=2d}".format(i) for i in range(2, 8)]
 
 training_chroms = ["chr"+str(i) for i in range(1, 23, 2)]
 validation_chroms = ["chr"+str(i) for i in range(2, 23, 2)]
+testing_chroms = ["chr"+str(i) for i in range(2, 3, 2)]
 
 MASK_VALUE = -10
 
@@ -48,15 +49,18 @@ def preprocess_data(data):
     return np.log1p(data)
 
 
-def create_masked(x, p):
+def create_masked(y, p):
 
     # dimensions are window_size x len(ASSAY_TYPES)
-    # we mask out some portions by setting them to mask_value
+    # We mask out some positions in x and mask the opposite ones in y
     counter = 0
+    x = np.copy(y)
     for i in range(x.shape[0]):
         if(np.random.uniform(low=0.0, high=1.0) < p):
             counter += 1
             x[i, :] = MASK_VALUE
+        else:
+            y[i, :] = MASK_VALUE
 
     '''
     # This can be used to debug how many entries are masked
@@ -66,7 +70,7 @@ def create_masked(x, p):
         print("All entries have been masked", file=sys.stderr)
     '''
 
-    return x
+    return x, y
 
 
 class DataGenerator(Sequence):
@@ -87,6 +91,8 @@ class DataGenerator(Sequence):
             self.chroms = training_chroms
         elif(self.mode == 'validation'):
             self.chroms = validation_chroms
+        elif(self.mode == 'test'):
+            self.chroms = testing_chroms
 
         for chrom in self.chroms:
             for cell_type in CELL_TYPES:
@@ -161,27 +167,27 @@ class DataGenerator(Sequence):
         X = np.zeros((self.batch_size, self.window_size, len(ASSAY_TYPES)))
         Y = np.zeros((self.batch_size, self.window_size, len(ASSAY_TYPES)))
 
-        for i in range(self.batch_size):
-            idx = self.idxs[batch_number * self.batch_size + i]
+        number_of_data_points = self.batch_size
+        while(number_of_data_points > 0):
+            random_idx = randrange(self.tot_len_list[-1])
+            idx = self.idxs[random_idx]
             chrom, start, d = self.idx_to_chrom_and_start(idx)
             end = start + self.window_size
 
             # Very useful for debugging!
             # print("Batch Number", batch_number, chrom, start, end,
-            #        file=sys.stderr)
+            #       file=sys.stderr)
 
             if((start < EDGE_CUSHION) or
                (end > self.chrom_lens[chrom] - EDGE_CUSHION)):
                 # We are too close to the edges of the chromosome
-                # So we create the i'th data point to be a dummy with all 0s
-                # Since X and Y are aleady 0s, we do nothing
                 '''
                 print("We are too close to the edge!",
                       batch_number, idx, chrom, start, d,
                       end, self.chrom_lens[chrom],
                       file=sys.stderr)
                 '''
-                pass
+                continue
             # TODO: This slows down training significantly
             # elif(check_region(chrom, start, end) == "bad"):
                 # The training data point either lies in
@@ -194,7 +200,7 @@ class DataGenerator(Sequence):
                       end, self.chrom_lens[chrom],
                       file=sys.stderr)
                 '''
-                # pass
+                # continue
             else:
                 if((self.mode == 'train') or (self.mode == 'validation')):
                     # Randomly sample a cell type
@@ -203,6 +209,7 @@ class DataGenerator(Sequence):
                     #       "for training", file=sys.stderr)
                 else:
                     random_cell_type_index = 0  # Fix cell type for testing
+
                 random_cell_type = CELL_TYPES[random_cell_type_index]
 
                 # TODO: remove this transpose
@@ -210,16 +217,19 @@ class DataGenerator(Sequence):
                 y = self.data[chrom][random_cell_type][:, start:end]
                 y = np.transpose(y)
 
-                x = create_masked(y, self.masking_probability)
+                x_masked, y_masked = create_masked(y, self.masking_probability)
+                # print(x_masked, y_masked)
 
                 '''
-                if(x.shape[0] != self.window_size):
+                if(x_masked.shape[0] != self.window_size):
                     print("Found the wrong shape!",
-                          chrom, start, end, x.shape, y.shape,
+                          chrom, start, end, x_masked.shape, y_masked.shape,
                           file=sys.stderr)
                 '''
 
-                X[i] = x
-                Y[i] = y
+                X[number_of_data_points-1] = x_masked
+                Y[number_of_data_points-1] = y_masked
+
+                number_of_data_points -= 1
 
         return X, Y

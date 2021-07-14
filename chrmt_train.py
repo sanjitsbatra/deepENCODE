@@ -17,34 +17,37 @@ EPS = 0.0001
 
 def lr_scheduler(epoch):
 
-    if epoch < 5:
+    if epoch < 2:
+        return 5e-3
+    elif epoch < 10:
         return 2e-3
-    elif epoch < 90:
+    elif epoch < 900:
         return 1e-3
     else:
         return 5e-4
 
 
-# Compute an MSE loss only at those positions that are MASK_VALUE
+# Compute an MSE loss only at those positions that are NOT MASK_VALUE
 def custom_loss(yTrue, yPred):
 
     masked_indices = K.tf.where(K.tf.equal(yTrue, MASK_VALUE),
-                                K.tf.ones_like(yTrue),
-                                K.tf.zeros_like(yTrue))
+                                K.tf.zeros_like(yTrue),
+                                K.tf.ones_like(yTrue))
 
     '''
     # MSE loss
-    loss = K.square(yTrue-yPred) * masked_indices
-    mse_loss = K.sum(loss, axis=-1) / (K.sum(masked_indices, axis=-1) + EPS)
-    print(mse_loss, file=sys.stderr)
+    loss = K.square((yTrue-yPred) * masked_indices)
+    sum_numerator = K.sum(K.sum(loss, axis=-1), axis=-1, keepdims=True)
+    sum_denominator = K.sum(K.sum(masked_indices, axis=-1), axis=-1,
+                            keepdims=True)
+    mse_loss = sum_numerator / (sum_denominator + EPS)
     '''
 
     # logcosh loss
     def _logcosh(x):
         return x + K.softplus(-2. * x) - K.log(2.)
-
-    logcosh_loss = K.mean(_logcosh((yTrue - yPred) * masked_indices) + EPS,
-                          axis=-1)
+    logcosh_loss = K.mean(K.mean(_logcosh((yTrue - yPred) * masked_indices),
+                          axis=-1, keepdims=False), axis=-1, keepdims=True)
 
     return logcosh_loss
 
@@ -111,7 +114,8 @@ if __name__ == '__main__':
     masking_prob = float(sys.argv[6])
 
     run_name = (run_name_prefix + "_" + str(window_size) +
-                "_" + str(num_filters) + "_" + str(num_convolutions))
+                "_" + str(num_filters) + "_" + str(num_convolutions) +
+                "_" + str(masking_prob))
 
     # tf.disable_v2_behavior()
     # tf.compat.v1.keras.backend.get_session()
