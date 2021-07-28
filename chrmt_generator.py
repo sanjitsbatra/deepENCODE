@@ -1,9 +1,11 @@
 # This script loads epigenetic data into memory
 # It does this for multiple ChIP-seq assays
 # and also for DNA Methylation (?)
+# It then also loads genome-wide RNA-seq data binned at 100bp resolution
 # It does so for multiple cell types
 # It then creates a generator
-# which contains a masking function
+# which contains a masking function for the epigenetic data
+# in order to perform masked-language modeling or supervised RNA-seq prediction
 import numpy as np
 from os.path import isfile
 from tensorflow.python.keras.utils.data_utils import Sequence
@@ -12,14 +14,20 @@ from random import randrange
 import pyranges as pr
 
 
+EPS = 0.000001
+
 DATA_FOLDER = '../Data/100bp_12_7_Data_20_July_2020'
 
-CELL_TYPES = ["T" + "{0:0=2d}".format(i) for i in range(1, 13)]
+TRANSCRIPTOME_DATA_FOLDER = "/scratch/sanjit/ENCODE_Imputation_Challenge/" \
+                            "2_April_2020/Data/Gene_Expression/" \
+                            "genome_wide_TPM_npy"
+
+CELL_TYPES = ["T" + "{0:0=2d}".format(i) for i in range(1, 2)]  # 13
 
 ASSAY_TYPES = ["A" + "{0:0=2d}".format(i) for i in range(2, 8)]
 
-training_chroms = ["chr"+str(i) for i in range(1, 23, 2)]
-validation_chroms = ["chr"+str(i) for i in range(2, 23, 2)]
+training_chroms = ["chr"+str(i) for i in range(1, 3, 2)]
+validation_chroms = ["chr"+str(i) for i in range(2, 3, 2)]
 testing_chroms = ["chr"+str(i) for i in range(2, 3, 2)]
 
 MASK_VALUE = -10
@@ -44,9 +52,9 @@ def check_region(chrom, start, end):
         return "good"
 
 
-def preprocess_data(data):
+def preprocess_epigenome(epigenome):
 
-    return np.log1p(data)
+    return np.log1p(epigenome)
 
 
 def create_masked(y, p):
@@ -73,7 +81,7 @@ def create_masked(y, p):
     return x, y
 
 
-class DataGenerator(Sequence):
+class EpigenomeGenerator(Sequence):
 
     def __init__(self, window_size, batch_size,
                  shuffle=True, mode='', masking_probability=0.2):
@@ -84,8 +92,10 @@ class DataGenerator(Sequence):
         self.mode = mode
         self.masking_probability = masking_probability
 
-        self.data = {}
+        self.epigenome = {}
         self.chrom_lens = {}
+        self.transcriptome_pos = {}
+        self.transcriptome_neg = {}
 
         if(self.mode == 'train'):
             self.chroms = training_chroms
@@ -96,24 +106,50 @@ class DataGenerator(Sequence):
 
         for chrom in self.chroms:
             for cell_type in CELL_TYPES:
-                data = []
+                epigenome = []
                 for assay_type in ASSAY_TYPES:
-                    fname = cell_type+""+assay_type+"."+chrom+".npy"
-                    fname = DATA_FOLDER+"/"+fname
-                    if(isfile(fname)):
-                        print("Loading", fname, file=sys.stderr)
-                        current_data = np.load(fname)
-                        current_data = preprocess_data(current_data)
-                        data.append(current_data)
+                    f_name = cell_type+""+assay_type+"."+chrom+".npy"
+                    f_name = DATA_FOLDER+"/"+f_name
+                    if(isfile(f_name)):
+                        print("Loading Epigenome data", f_name,
+                              file=sys.stderr)
+                        current_epigenome = np.load(f_name)
+                        current_epigenome = preprocess_epigenome(
+                                            current_epigenome)
+                        epigenome.append(current_epigenome)
                     else:
                         print(assay_type, "missing in", cell_type, chrom)
                         sys.exit(-1)
 
-                if(chrom not in self.data):
-                    self.data[chrom] = {}
-                    self.chrom_lens[chrom] = current_data.shape[0]
-                data = np.vstack(data)  # concatenate all assay types
-                self.data[chrom][cell_type] = data
+                # Load transcriptome
+                f_transcriptome_pos = cell_type + "_TPM." + chrom + ".+.npy"
+                f_transcriptome_pos = (TRANSCRIPTOME_DATA_FOLDER + "/"
+                                       + f_transcriptome_pos)
+
+                f_transcriptome_neg = cell_type + "_TPM." + chrom + ".-.npy"
+                f_transcriptome_neg = (TRANSCRIPTOME_DATA_FOLDER + "/"
+                                       + f_transcriptome_neg)
+
+                if(isfile(f_transcriptome_pos) and
+                   isfile(f_transcriptome_neg)):
+                    print("Loading Transcriptome data", f_transcriptome_pos,
+                          f_transcriptome_neg, file=sys.stderr)
+                    transcriptome_pos = np.load(f_transcriptome_pos)
+                    transcriptome_neg = np.load(f_transcriptome_neg)
+                else:
+                    print("Transcriptome data missing", f_transcriptome_pos,
+                          f_transcriptome_neg, file=sys.stderr)
+                    sys.exit(-2)
+
+                if(chrom not in self.epigenome):
+                    self.epigenome[chrom] = {}
+                    self.chrom_lens[chrom] = current_epigenome.shape[0]
+                    self.transcriptome_pos[chrom] = {}
+                    self.transcriptome_neg[chrom] = {}
+                epigenome = np.vstack(epigenome)  # concatenate all assay types
+                self.epigenome[chrom][cell_type] = epigenome
+                self.transcriptome_pos[chrom][cell_type] = transcriptome_pos
+                self.transcriptome_neg[chrom][cell_type] = transcriptome_neg
 
         # Now we need a way to randomly sample from the genome
         # For this we need chromosome lengths
@@ -149,18 +185,7 @@ class DataGenerator(Sequence):
             d = idx - self.tot_len_list[chr_idx - 1]
         start = d
 
-        # This is already handled downstream
-        '''
-        # Make sure that we're not too close to the edge of the chromosome
-        if (d < EDGE_CUSHION):
-            start = d + EDGE_CUSHION
-        elif(d > self.chrom_lens[chrom] - EDGE_CUSHION):
-            start = d - EDGE_CUSHION
-        else:
-            start = d
-        '''
-
-        return chrom, start, d
+        return chrom, start
 
     def __getitem__(self, batch_number):
 
@@ -171,7 +196,7 @@ class DataGenerator(Sequence):
         while(number_of_data_points > 0):
             random_idx = randrange(self.tot_len_list[-1])
             idx = self.idxs[random_idx]
-            chrom, start, d = self.idx_to_chrom_and_start(idx)
+            chrom, start = self.idx_to_chrom_and_start(idx)
             end = start + self.window_size
 
             # Very useful for debugging!
@@ -183,7 +208,7 @@ class DataGenerator(Sequence):
                 # We are too close to the edges of the chromosome
                 '''
                 print("We are too close to the edge!",
-                      batch_number, idx, chrom, start, d,
+                      batch_number, idx, chrom, start,
                       end, self.chrom_lens[chrom],
                       file=sys.stderr)
                 '''
@@ -214,7 +239,7 @@ class DataGenerator(Sequence):
 
                 # TODO: remove this transpose
                 # TODO: add assert on size to make sure it's always consistent
-                y = self.data[chrom][random_cell_type][:, start:end]
+                y = self.epigenome[chrom][random_cell_type][:, start:end]
                 y = np.transpose(y)
 
                 x_masked, y_masked = create_masked(y, self.masking_probability)
@@ -229,6 +254,95 @@ class DataGenerator(Sequence):
 
                 X[number_of_data_points-1] = x_masked
                 Y[number_of_data_points-1] = y_masked
+
+                number_of_data_points -= 1
+
+        return X, Y
+
+
+class TranscriptomeGenerator(EpigenomeGenerator):
+
+    def __init__(self, window_size, batch_size,
+                 shuffle=True, mode='', masking_probability=0.,
+                 cell_type=None):
+
+        self.window_size = window_size
+        self.batch_size = batch_size
+        self.shuffle = shuffle
+        self.mode = mode
+        self.masking_probability = masking_probability
+        self.cell_type = cell_type
+
+        EpigenomeGenerator.__init__(self, window_size, batch_size,
+                                    shuffle, mode, masking_probability)
+
+    def __getitem__(self, batch_number):
+
+        X = np.zeros((self.batch_size, self.window_size, len(ASSAY_TYPES)))
+        Y = np.zeros((self.batch_size, 1))
+
+        number_of_data_points = self.batch_size
+        while(number_of_data_points > 0):
+            random_idx = randrange(self.tot_len_list[-1])
+            idx = self.idxs[random_idx]
+            chrom, start = self.idx_to_chrom_and_start(idx)
+            end = start + self.window_size
+
+            # Very useful for debugging!
+            # print("Batch Number", batch_number, chrom, start, end,
+            #       file=sys.stderr)
+
+            if((start < EDGE_CUSHION) or
+               (end > self.chrom_lens[chrom] - EDGE_CUSHION)):
+                # We are too close to the edges of the chromosome
+                '''
+                print("We are too close to the edge!",
+                      batch_number, idx, chrom, start,
+                      end, self.chrom_lens[chrom],
+                      file=sys.stderr)
+                '''
+                continue
+            # TODO: This slows down training significantly
+            # elif(check_region(chrom, start, end) == "bad"):
+                # The training data point either lies in
+                # a Blacklisted Region or a Gap Region in hg38
+                # So we create the i'th data point to be a dummy with all 0s
+                # Since X and Y are aleady 0s, we do nothing
+                '''
+                print("Data point in Blacklisted or Gap region",
+                      batch_number, idx, chrom, start, d,
+                      end, self.chrom_lens[chrom],
+                      file=sys.stderr)
+                '''
+                # continue
+            else:
+                if((self.mode == 'train') or (self.mode == 'validation')):
+                    # Randomly sample a cell type
+                    random_cell_type_index = randrange(len(CELL_TYPES))
+                    # print("Sampled cell type", random_cell_type_index,
+                    #       "for training", file=sys.stderr)
+                else:
+                    random_cell_type_index = 0  # Fix cell type for testing
+
+                random_cell_type = CELL_TYPES[random_cell_type_index]
+
+                x = self.epigenome[chrom][random_cell_type][:, start:end]
+                x = np.transpose(x)
+
+                # Flip a coin to choose the strand
+                random_toss = randrange(1)
+                if(random_toss == 1):
+                    y = (self.transcriptome_pos[chrom]
+                                               [random_cell_type]
+                                               [int(1.0*(start+end)/2)])
+                else:
+                    x = x[::-1, :]
+                    y = (self.transcriptome_neg[chrom]
+                                               [random_cell_type]
+                                               [int(1.0*(start+end)/2)])
+
+                X[number_of_data_points-1] = x
+                Y[number_of_data_points-1] = y
 
                 number_of_data_points -= 1
 

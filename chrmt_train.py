@@ -1,18 +1,18 @@
 import sys
 import os
-from chrmt_generator import DataGenerator, ASSAY_TYPES, MASK_VALUE
+from chrmt_generator import EpigenomeGenerator, TranscriptomeGenerator
+from chrmt_generator import ASSAY_TYPES, MASK_VALUE
 from tensorflow.keras.callbacks import LearningRateScheduler
 from tensorflow.keras.models import Model
 from tensorflow.keras.layers import BatchNormalization, Activation
 from tensorflow.keras.layers import Conv1D, Input, add
+from tensorflow.keras.layers import Flatten, Dense
+from keras.losses import logcosh
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.callbacks import ModelCheckpoint
 from keras import backend as K
 from tqdm.keras import TqdmCallback
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-
-
-EPS = 0.0001
 
 
 def lr_scheduler(epoch):
@@ -72,12 +72,12 @@ def residual_block(x, conv_kernel_size, num_filters):
     return output
 
 
-def create_cnn(number_of_assays,
-               window_size,
-               num_filters,
-               conv_kernel_size,
-               num_convolutions,
-               padding):
+def create_epigenome_cnn(number_of_assays,
+                         window_size,
+                         num_filters,
+                         conv_kernel_size,
+                         num_convolutions,
+                         padding):
 
     inputs = Input(shape=(window_size, number_of_assays), name='input')
 
@@ -99,27 +99,84 @@ def create_cnn(number_of_assays,
     return model
 
 
+def create_transcriptome_cnn(number_of_assays,
+                             window_size,
+                             num_filters,
+                             conv_kernel_size,
+                             num_convolutions,
+                             padding):
+
+    inputs = Input(shape=(window_size, number_of_assays), name='input')
+
+    assert(padding == "same")
+
+    # Initial convolution
+    x = BAC(inputs, conv_kernel_size, num_filters)
+
+    # Perform multiple convolutional layers
+    for i in range(num_convolutions):
+        x = residual_block(x, conv_kernel_size, num_filters)
+
+    # Collapse to dense layer
+    x = Flatten()(x)
+    x = Dense(16)(x)
+    outputs = Dense(1)(x)
+
+    # construct the CNN
+    model = Model(inputs=inputs, outputs=outputs)
+
+    return model
+
+
 if __name__ == '__main__':
 
     epochs = 1000
     steps_per_epoch = 100
 
     run_name_prefix = sys.argv[1]
-    window_size = int(sys.argv[2])  # => Length of window / 100bp
-    batch_size = int(sys.argv[3])
-    num_filters = int(sys.argv[4])
+    framework = sys.argv[2]  # epigenome or transcriptome
+    window_size = int(sys.argv[3])  # => Length of window / 100bp
+    batch_size = int(sys.argv[4])
+    num_filters = int(sys.argv[5])
     conv_kernel_size = 11
-    num_convolutions = int(sys.argv[5])
+    num_convolutions = int(sys.argv[6])
     padding = 'same'
-    masking_prob = float(sys.argv[6])
+    masking_prob = float(sys.argv[7])
 
-    run_name = (run_name_prefix + "_" + str(window_size) +
+    run_name = (run_name_prefix + "_" + framework + "_" + str(window_size) +
                 "_" + str(num_filters) + "_" + str(num_convolutions) +
                 "_" + str(masking_prob))
 
     # tf.disable_v2_behavior()
     # tf.compat.v1.keras.backend.get_session()
     # tf.enable_eager_execution()  # This leads to Filling up shuffle buffer
+
+    epigenome_model = create_epigenome_cnn(len(ASSAY_TYPES),
+                                           window_size,
+                                           num_filters,
+                                           conv_kernel_size,
+                                           num_convolutions,
+                                           'same')
+
+    transcriptome_model = create_transcriptome_cnn(len(ASSAY_TYPES),
+                                                   window_size,
+                                                   num_filters,
+                                                   conv_kernel_size,
+                                                   num_convolutions,
+                                                   'same')
+
+    if(framework == "epigenome"):
+        model = epigenome_model
+        loss_function = custom_loss
+        DataGenerator = EpigenomeGenerator
+    elif(framework == "transcriptome"):
+        model = transcriptome_model
+        loss_function = logcosh
+        DataGenerator = TranscriptomeGenerator
+    else:
+        print("Invalid framework. Should be epigenome or transcriptome",
+              file=sys.stderr)
+        sys.exit(-2)
 
     training_generator = DataGenerator(window_size,
                                        batch_size,
@@ -132,13 +189,6 @@ if __name__ == '__main__':
                                          shuffle=True,
                                          mode='validation',
                                          masking_probability=masking_prob)
-
-    model = create_cnn(len(ASSAY_TYPES),
-                       window_size,
-                       num_filters,
-                       conv_kernel_size,
-                       num_convolutions,
-                       'same')
 
     checkpoint = ModelCheckpoint(run_name+"."+"model-{epoch:02d}.hdf5",
                                  verbose=0, save_best_only=False)
@@ -153,7 +203,7 @@ if __name__ == '__main__':
     setattr(tqdm_keras, 'on_test_batch_begin', lambda x, y: None)
     setattr(tqdm_keras, 'on_test_batch_end', lambda x, y: None)
 
-    model.compile(loss=custom_loss,
+    model.compile(loss=loss_function,
                   optimizer=Adam(clipnorm=1.),
                   run_eagerly=False)
 
