@@ -7,7 +7,7 @@ from tensorflow.keras.models import Model
 from tensorflow.keras.layers import BatchNormalization, Activation
 from tensorflow.keras.layers import Conv1D, Input, add
 from tensorflow.keras.layers import Flatten, Dense
-from keras.losses import logcosh
+# from keras.losses import logcosh
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.callbacks import ModelCheckpoint
 from keras import backend as K
@@ -171,7 +171,7 @@ if __name__ == '__main__':
         DataGenerator = EpigenomeGenerator
     elif(framework == "transcriptome"):
         model = transcriptome_model
-        loss_function = logcosh
+        loss_function = 'mean_squared_error'
         DataGenerator = TranscriptomeGenerator
     else:
         print("Invalid framework. Should be epigenome or transcriptome",
@@ -181,13 +181,13 @@ if __name__ == '__main__':
     training_generator = DataGenerator(window_size,
                                        batch_size,
                                        shuffle=True,
-                                       mode='train',
+                                       mode="training",
                                        masking_probability=masking_prob)
 
     validation_generator = DataGenerator(window_size,
                                          batch_size,
                                          shuffle=True,
-                                         mode='validation',
+                                         mode="validation",
                                          masking_probability=masking_prob)
 
     checkpoint = ModelCheckpoint(run_name+"."+"model-{epoch:02d}.hdf5",

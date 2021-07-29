@@ -30,7 +30,7 @@ if __name__ == '__main__':
 
     test_generator = DataGenerator(window_size,
                                    1,
-                                   shuffle=True,
+                                   shuffle=False,
                                    mode='test',
                                    masking_probability=0.0)
 

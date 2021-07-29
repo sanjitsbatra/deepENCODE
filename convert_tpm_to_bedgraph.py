@@ -30,8 +30,11 @@ if __name__ == '__main__':
         chrom_length[chrom] = chrom_npy[chrom].shape[0]  # at 100bp resolution
 
         # Initialize output numpy array
-        output_npy_pos[chrom] = np.zeros(chrom_length[chrom])
-        output_npy_neg[chrom] = np.zeros(chrom_length[chrom])
+        # NOTE: -0.3 is added because that's the 0 after
+        # cell-type normalization of TPMs
+        # This might change in the future so is a TODO
+        output_npy_pos[chrom] = np.zeros(chrom_length[chrom]) - 0.3
+        output_npy_neg[chrom] = np.zeros(chrom_length[chrom]) - 0.3
 
     # Read in TPM file
     line_number = 0
