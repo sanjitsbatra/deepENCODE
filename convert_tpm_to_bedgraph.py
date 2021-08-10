@@ -1,5 +1,6 @@
-# This script accepts as input normalized TPM values for a cell line
+# This script accepts as input TPM values for a cell line
 # It then converts it into two 100bp resolution npy arrays; one for each strand
+# It also performs a log10 of the TPM values for normality
 import numpy as np
 import sys
 
@@ -30,11 +31,8 @@ if __name__ == '__main__':
         chrom_length[chrom] = chrom_npy[chrom].shape[0]  # at 100bp resolution
 
         # Initialize output numpy array
-        # NOTE: -0.3 is added because that's the 0 after
-        # cell-type normalization of TPMs
-        # This might change in the future so is a TODO
-        output_npy_pos[chrom] = np.zeros(chrom_length[chrom]) - 0.3
-        output_npy_neg[chrom] = np.zeros(chrom_length[chrom]) - 0.3
+        output_npy_pos[chrom] = np.zeros(chrom_length[chrom])
+        output_npy_neg[chrom] = np.zeros(chrom_length[chrom])
 
     # Read in TPM file
     line_number = 0
@@ -58,9 +56,9 @@ if __name__ == '__main__':
                 print("Something wrong with strand", strand, file=sys.stderr)
                 sys.exit(-2)
 
-    # Write the output numpy arrays
+    # Write the output numpy arrays and perform log10(x+1)
     for chrom in chroms:
         np.save(output_npy_path+"/"+cell_type_name+"."+chrom+".+.npy",
-                output_npy_pos[chrom])
+                np.log10(output_npy_pos[chrom] + 1))
         np.save(output_npy_path+"/"+cell_type_name+"."+chrom+".-.npy",
-                output_npy_neg[chrom])
+                np.log10(output_npy_neg[chrom] + 1))

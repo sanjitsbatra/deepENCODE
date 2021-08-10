@@ -22,19 +22,21 @@ TRANSCRIPTOME_DATA_FOLDER = "/scratch/sanjit/ENCODE_Imputation_Challenge/" \
 
 TSS_DATA = "/scratch/sanjit/ENCODE_Imputation_Challenge/" \
            "2_April_2020/Data/Gene_Expression/" \
-           "GENE_EXPRESSION.NORMALIZED.tsv"
+           "T01.tsv.TPM.headered"
 
 CELL_TYPES = ["T" + "{0:0=2d}".format(i) for i in range(1, 13)]
 
 ASSAY_TYPES = ["A" + "{0:0=2d}".format(i) for i in range(2, 8)]
 
-training_chroms = ["chr"+str(i) for i in range(3, 23, 2)]
-validation_chroms = ["chr"+str(i) for i in range(4, 23, 2)]
-testing_chroms = ["chr"+str(i) for i in range(1, 3, 2)]
+training_chroms = ["chr"+str(i) for i in range(21, 23, 2)]
+validation_chroms = ["chr"+str(i) for i in range(22, 23, 2)]
+testing_chroms = ["chr2", "chr9"]  # ["chr"+str(i) for i in range(1, 3, 1)]
 
 EPS = 0.000001
 
 MASK_VALUE = -10
+
+RESOLUTION = 100
 
 EDGE_CUSHION = 1000  # corresponds to 100Kb from the edge of chromosomes
 
@@ -118,6 +120,7 @@ class EpigenomeGenerator(Sequence):
             else:
                 print("TSS strand information is invalid",
                       file=sys.stderr)
+                continue
 
         if(self.mode == "training"):
             self.chroms = training_chroms
@@ -285,18 +288,20 @@ class EpigenomeGenerator(Sequence):
 class TranscriptomeGenerator(EpigenomeGenerator):
 
     def __init__(self, window_size, batch_size,
-                 shuffle=True, mode='', masking_probability=0.,
-                 cell_type=0):
+                 shuffle=True, mode='', masking_probability=0.0):
 
         self.window_size = window_size
         self.batch_size = batch_size
         self.shuffle = shuffle
         self.mode = mode
         self.masking_probability = masking_probability
-        self.cell_type = cell_type
 
-        EpigenomeGenerator.__init__(self, window_size, batch_size,
-                                    shuffle, mode, masking_probability)
+        EpigenomeGenerator.__init__(self,
+                                    self.window_size,
+                                    self.batch_size,
+                                    self.shuffle,
+                                    self.mode,
+                                    self.masking_probability)
 
     def __getitem__(self, batch_number):
 
@@ -305,22 +310,36 @@ class TranscriptomeGenerator(EpigenomeGenerator):
 
         number_of_data_points = self.batch_size
         while(number_of_data_points > 0):
+            # Based on Jeff and Kishore's suggestion
+            # we want each batch to have atleast 20% TSS training
             genome_wide = False
-            if(genome_wide):
+            random_number = randrange(self.batch_size)
+            if((random_number > int(self.batch_size/5))
+               and (genome_wide)):
                 random_idx = randrange(self.tot_len_list[-1])
                 idx = self.idxs[random_idx]
                 chrom, start = self.idx_to_chrom_and_start(idx)
+                # Flip a coin to choose the strand if training genome wide
+                random_toss = randrange(1)
+                if(random_toss == 1):
+                    strand = "+"
+                else:
+                    strand = "-"
             else:
                 random_idx = randrange(len(self.TSS))
                 chrom, start, strand = self.TSS[random_idx]
-                start = int(start)
-                # print(chrom, start, strand, file=sys.stderr)
-                if(self.mode == "training"):
-                    if(chrom not in training_chroms):
-                        continue
-                elif(self.mode == "validation"):
-                    if(chrom not in validation_chroms):
-                        continue
+                start = int(int(start)/RESOLUTION)
+
+            # print(chrom, start, strand, file=sys.stderr)
+            if(self.mode == "training"):
+                if(chrom not in training_chroms):
+                    continue
+            elif(self.mode == "validation"):
+                if(chrom not in validation_chroms):
+                    continue
+            elif(self.mode == "testing"):
+                if(chrom not in testing_chroms):
+                    continue
 
             end = start + self.window_size
 
@@ -361,14 +380,6 @@ class TranscriptomeGenerator(EpigenomeGenerator):
                                     start+int(self.window_size/2)])
                 x = np.transpose(x)
 
-                # Flip a coin to choose the strand if training genome wide
-                if(genome_wide):
-                    random_toss = randrange(1)
-                    if(random_toss == 1):
-                        strand = "+"
-                    else:
-                        strand = "-"
-
                 if(strand == "+"):
                     y = (self.transcriptome_pos[chrom]
                                                [cell_type]
@@ -398,17 +409,16 @@ class TranscriptomePredictor(EpigenomeGenerator):
 
     def __init__(self, window_size, batch_size,
                  shuffle=False, mode='', masking_probability=0.,
-                 cell_type=0, chrom="chr1", start=1, end=2, strand="+"):
+                 cell_type=0, chrom="chr1", start=1, strand="+"):
 
         self.window_size = window_size
-        self.batch_size = end - start + 1  # batch_size
+        self.batch_size = batch_size
         self.shuffle = shuffle
         self.mode = mode
         self.masking_probability = masking_probability
         self.cell_type = cell_type
         self.chrom = chrom
         self.start = start
-        self.end = end
         self.strand = strand
 
         EpigenomeGenerator.__init__(self, self.window_size, self.batch_size,
@@ -420,10 +430,10 @@ class TranscriptomePredictor(EpigenomeGenerator):
         X = np.zeros((self.batch_size, self.window_size, len(ASSAY_TYPES)))
         Y = np.zeros((self.batch_size, 1))
 
-        for i in range(self.start, self.end+1):
+        for i in range(self.start, self.start+1):
             # Very useful for debugging!
             print("Batch Number", batch_number, i, self.chrom, self.start,
-                  self.end, file=sys.stderr)
+                  self.strand, file=sys.stderr)
 
             cell_type_index = self.cell_type
             cell_type = CELL_TYPES[cell_type_index]

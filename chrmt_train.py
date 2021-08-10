@@ -1,7 +1,7 @@
 import sys
 import os
 from chrmt_generator import EpigenomeGenerator, TranscriptomeGenerator
-from chrmt_generator import ASSAY_TYPES, MASK_VALUE
+from chrmt_generator import ASSAY_TYPES, MASK_VALUE, EPS
 from tensorflow.keras.callbacks import LearningRateScheduler
 from tensorflow.keras.models import Model
 from tensorflow.keras.layers import BatchNormalization, Activation
@@ -10,6 +10,7 @@ from tensorflow.keras.layers import Flatten, Dense
 # from keras.losses import logcosh
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.callbacks import ModelCheckpoint
+# import tensorflow as tf
 from keras import backend as K
 from tqdm.keras import TqdmCallback
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
@@ -25,6 +26,17 @@ def lr_scheduler(epoch):
         return 1e-3
     else:
         return 5e-4
+
+
+# Compute a loss that incorporates both mean and variance
+def maximum_likelihood_loss(yTrue, yPred):
+    predicted_mean = yPred[:, 0]
+    predicted_log_precision = yPred[:, 1] + EPS
+    print(predicted_mean, predicted_log_precision)
+    loss = K.mean(K.square(predicted_mean - yTrue) *
+                  K.exp(predicted_log_precision), axis=-1)
+    loss = loss - K.mean(predicted_log_precision, axis=-1)
+    return loss
 
 
 # Compute an MSE loss only at those positions that are NOT MASK_VALUE
@@ -104,7 +116,8 @@ def create_transcriptome_cnn(number_of_assays,
                              num_filters,
                              conv_kernel_size,
                              num_convolutions,
-                             padding):
+                             padding,
+                             number_of_outputs):
 
     inputs = Input(shape=(window_size, number_of_assays), name='input')
 
@@ -120,7 +133,7 @@ def create_transcriptome_cnn(number_of_assays,
     # Collapse to dense layer
     x = Flatten()(x)
     x = Dense(16)(x)
-    outputs = Dense(1)(x)
+    outputs = Dense(number_of_outputs)(x)
 
     # construct the CNN
     model = Model(inputs=inputs, outputs=outputs)
@@ -151,28 +164,33 @@ if __name__ == '__main__':
     # tf.compat.v1.keras.backend.get_session()
     # tf.enable_eager_execution()  # This leads to Filling up shuffle buffer
 
-    epigenome_model = create_epigenome_cnn(len(ASSAY_TYPES),
-                                           window_size,
-                                           num_filters,
-                                           conv_kernel_size,
-                                           num_convolutions,
-                                           'same')
-
-    transcriptome_model = create_transcriptome_cnn(len(ASSAY_TYPES),
-                                                   window_size,
-                                                   num_filters,
-                                                   conv_kernel_size,
-                                                   num_convolutions,
-                                                   'same')
-
     if(framework == "epigenome"):
-        model = epigenome_model
+
         loss_function = custom_loss
         DataGenerator = EpigenomeGenerator
+        model = create_epigenome_cnn(len(ASSAY_TYPES),
+                                     window_size,
+                                     num_filters,
+                                     conv_kernel_size,
+                                     num_convolutions,
+                                     'same')
     elif(framework == "transcriptome"):
-        model = transcriptome_model
-        loss_function = 'mean_squared_error'
+
+        loss = 'mle'  # mle
+        if(loss == 'mse'):
+            loss_function = 'mean_squared_error'
+            number_of_outputs = 1
+        elif(loss == 'mle'):
+            loss_function = maximum_likelihood_loss
+            number_of_outputs = 2
         DataGenerator = TranscriptomeGenerator
+        model = create_transcriptome_cnn(len(ASSAY_TYPES),
+                                         window_size,
+                                         num_filters,
+                                         conv_kernel_size,
+                                         num_convolutions,
+                                         'same',
+                                         number_of_outputs)
     else:
         print("Invalid framework. Should be epigenome or transcriptome",
               file=sys.stderr)
