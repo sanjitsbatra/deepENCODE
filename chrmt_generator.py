@@ -46,9 +46,8 @@ Gap_Regions = pr.read_bed('../Data/hg38.Gaps.bed', as_df=False)
 
 
 def check_region(chrom, start, end):
-    # Since we are working at 100bp resolution
-    start = int(start*1.0 * 100.0)
-    end = int(end*1.0 * 100.0)
+    start = int(start*1.0 * RESOLUTION)
+    end = int(end*1.0 * RESOLUTION)
 
     if(len(Blacklisted_Regions[chrom, start:end]) +
        len(Gap_Regions[chrom, start:end]) > 0):
@@ -312,7 +311,7 @@ class TranscriptomeGenerator(EpigenomeGenerator):
         while(number_of_data_points > 0):
             # Based on Jeff and Kishore's suggestion
             # we want each batch to have atleast 20% TSS training
-            genome_wide = False
+            genome_wide = True
             random_number = randrange(self.batch_size)
             if((random_number > int(self.batch_size/5))
                and (genome_wide)):
@@ -376,8 +375,8 @@ class TranscriptomeGenerator(EpigenomeGenerator):
 
                 x = (self.epigenome[chrom][cell_type]
                                    [:,
-                                    start-int(self.window_size/2):
-                                    start+int(self.window_size/2)])
+                                    start - (self.window_size // 2):
+                                    start + (self.window_size // 2) + 1])
                 x = np.transpose(x)
 
                 if(strand == "+"):
@@ -394,7 +393,7 @@ class TranscriptomeGenerator(EpigenomeGenerator):
                 # We only want to train on points that are greater than 0
                 if(abs(y) < EPS):
                     continue
-                print("Found TSS", cell_type, chrom, start, end, y)
+                # print("Found TSS", cell_type, chrom, start, end, y)
                 '''
 
                 X[number_of_data_points-1] = x
@@ -441,8 +440,8 @@ class TranscriptomePredictor(EpigenomeGenerator):
             x = (self.epigenome[self.chrom]
                                [cell_type]
                                [:,
-                                i-int(self.window_size/2):
-                                i+int(self.window_size/2)])
+                                i - (self.window_size // 2):
+                                i + (self.window_size // 2) + 1])
             x = np.transpose(x)
 
             if(self.strand == "+"):
@@ -454,7 +453,6 @@ class TranscriptomePredictor(EpigenomeGenerator):
                 y = (self.transcriptome_neg[self.chrom]
                                            [cell_type]
                                            [i])
-
             X[i-self.start] = x
             Y[i-self.start] = y
 

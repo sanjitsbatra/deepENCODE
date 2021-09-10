@@ -6,11 +6,12 @@ from tensorflow.keras.callbacks import LearningRateScheduler
 from tensorflow.keras.models import Model
 from tensorflow.keras.layers import BatchNormalization, Activation
 from tensorflow.keras.layers import Conv1D, Input, add
+# from tensorflow.keras.layers import Cropping1D
 from tensorflow.keras.layers import Flatten, Dense
 # from keras.losses import logcosh
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.callbacks import ModelCheckpoint
-# import tensorflow as tf
+import tensorflow as tf
 from keras import backend as K
 from tqdm.keras import TqdmCallback
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
@@ -32,14 +33,15 @@ def lr_scheduler(epoch):
 def maximum_likelihood_loss(yTrue, yPred):
     predicted_mean = yPred[:, 0]
     predicted_log_precision = yPred[:, 1] + EPS
-    print(predicted_mean, predicted_log_precision)
-    loss = K.mean(K.square(predicted_mean - yTrue) *
-                  K.exp(predicted_log_precision), axis=-1)
-    loss = loss - K.mean(predicted_log_precision, axis=-1)
+    loss = K.mean(K.square(predicted_mean - yTrue), axis=-1)
+    #               * K.exp(predicted_log_precision), axis=0)
+    # loss = loss - 0.001 * K.mean(predicted_log_precision, axis=0)
+    tf.print(yTrue, yPred, loss, predicted_log_precision,
+             output_stream=sys.stdout)
     return loss
 
 
-# Compute an MSE loss only at those positions that are NOT MASK_VALUE
+# Compute an MSE loss for LM only at those positions that are NOT MASK_VALUE
 def custom_loss(yTrue, yPred):
 
     masked_indices = K.tf.where(K.tf.equal(yTrue, MASK_VALUE),
@@ -130,7 +132,10 @@ def create_transcriptome_cnn(number_of_assays,
     for i in range(num_convolutions):
         x = residual_block(x, conv_kernel_size, num_filters)
 
-    # Collapse to dense layer
+    # Final convolution
+    # x = BAC(x, conv_kernel_size, 1)
+    # outputs = Cropping1D(cropping=window_size // 2)(x)
+
     x = Flatten()(x)
     x = Dense(16)(x)
     outputs = Dense(number_of_outputs)(x)
@@ -176,7 +181,7 @@ if __name__ == '__main__':
                                      'same')
     elif(framework == "transcriptome"):
 
-        loss = 'mle'  # mle
+        loss = 'mse'  # mle
         if(loss == 'mse'):
             loss_function = 'mean_squared_error'
             number_of_outputs = 1
