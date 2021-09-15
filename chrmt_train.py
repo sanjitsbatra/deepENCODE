@@ -11,7 +11,7 @@ from tensorflow.keras.layers import Flatten, Dense
 # from keras.losses import logcosh
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.callbacks import ModelCheckpoint
-import tensorflow as tf
+# import tensorflow as tf
 from keras import backend as K
 from tqdm.keras import TqdmCallback
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
@@ -19,11 +19,9 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 def lr_scheduler(epoch):
 
-    if epoch < 2:
-        return 5e-3
-    elif epoch < 10:
-        return 2e-3
-    elif epoch < 900:
+    if epoch < 3:
+        return 2e-4
+    elif epoch < 90:
         return 1e-3
     else:
         return 5e-4
@@ -31,13 +29,40 @@ def lr_scheduler(epoch):
 
 # Compute a loss that incorporates both mean and variance
 def maximum_likelihood_loss(yTrue, yPred):
-    predicted_mean = yPred[:, 0]
-    predicted_log_precision = yPred[:, 1] + EPS
-    loss = K.mean(K.square(predicted_mean - yTrue), axis=-1)
-    #               * K.exp(predicted_log_precision), axis=0)
-    # loss = loss - 0.001 * K.mean(predicted_log_precision, axis=0)
-    tf.print(yTrue, yPred, loss, predicted_log_precision,
-             output_stream=sys.stdout)
+
+    DEBUG = False
+    if(DEBUG):
+        yTrue = K.print_tensor(yTrue, message='yTrue = ')
+
+    yTrue_flattened = K.flatten(yTrue)
+
+    if(DEBUG):
+        yTrue_flattened = K.print_tensor(yTrue_flattened,
+                                         message='yTrue_fl = ')
+        yPred = K.print_tensor(yPred, message='yPred = ')
+
+    yPred_mean = yPred[:, 0]
+
+    if(DEBUG):
+        yPred_mean = K.print_tensor(yPred_mean, message='pm = ')
+
+    yPred_log_precision = yPred[:, 1] + EPS
+
+    if(DEBUG):
+        yPred_log_precision = K.print_tensor(yPred_log_precision,
+                                             message='ylp = ')
+
+    squared_loss = K.square(yTrue_flattened - yPred_mean)
+
+    if(DEBUG):
+        squared_loss = K.print_tensor(squared_loss, message='squared loss = ')
+
+    loss = K.mean(squared_loss * K.exp(yPred_log_precision), axis=-1)
+    loss = loss - 1.0 * K.mean(yPred_log_precision, axis=-1)
+
+    if(DEBUG):
+        loss = K.print_tensor(loss, message='loss = ')
+
     return loss
 
 
@@ -137,8 +162,8 @@ def create_transcriptome_cnn(number_of_assays,
     # outputs = Cropping1D(cropping=window_size // 2)(x)
 
     x = Flatten()(x)
-    x = Dense(16)(x)
-    outputs = Dense(number_of_outputs)(x)
+    x = Dense(64, activation='relu')(x)
+    outputs = Dense(number_of_outputs, activation='linear')(x)
 
     # construct the CNN
     model = Model(inputs=inputs, outputs=outputs)
@@ -148,7 +173,7 @@ def create_transcriptome_cnn(number_of_assays,
 
 if __name__ == '__main__':
 
-    epochs = 1000
+    epochs = 200
     steps_per_epoch = 100
 
     run_name_prefix = sys.argv[1]
@@ -160,13 +185,19 @@ if __name__ == '__main__':
     num_convolutions = int(sys.argv[6])
     padding = 'same'
     masking_prob = float(sys.argv[7])
+    loss = sys.argv[8]
+    if(((loss == 'mse') or (loss == 'mle')) is False):
+        print("Loss should be mse or mle", file=sys.stderr)
+        sys.exit(-1)
+    genome_wide_flag = sys.argv[9]
 
     run_name = (run_name_prefix + "_" + framework + "_" + str(window_size) +
                 "_" + str(num_filters) + "_" + str(num_convolutions) +
-                "_" + str(masking_prob))
+                "_" + str(masking_prob) + "_" + loss + "_" + genome_wide_flag)
 
     # tf.disable_v2_behavior()
     # tf.compat.v1.keras.backend.get_session()
+    # tf.compat.v1.enable_eager_execution()
     # tf.enable_eager_execution()  # This leads to Filling up shuffle buffer
 
     if(framework == "epigenome"):
@@ -181,7 +212,6 @@ if __name__ == '__main__':
                                      'same')
     elif(framework == "transcriptome"):
 
-        loss = 'mse'  # mle
         if(loss == 'mse'):
             loss_function = 'mean_squared_error'
             number_of_outputs = 1
@@ -204,13 +234,13 @@ if __name__ == '__main__':
     training_generator = DataGenerator(window_size,
                                        batch_size,
                                        shuffle=True,
-                                       mode="training",
+                                       mode="training" + genome_wide_flag,
                                        masking_probability=masking_prob)
 
     validation_generator = DataGenerator(window_size,
                                          batch_size,
                                          shuffle=True,
-                                         mode="validation",
+                                         mode="validation" + genome_wide_flag,
                                          masking_probability=masking_prob)
 
     checkpoint = ModelCheckpoint(run_name+"."+"model-{epoch:02d}.hdf5",
@@ -227,7 +257,7 @@ if __name__ == '__main__':
     setattr(tqdm_keras, 'on_test_batch_end', lambda x, y: None)
 
     model.compile(loss=loss_function,
-                  optimizer=Adam(clipnorm=1.),
+                  optimizer=Adam(),
                   run_eagerly=False)
 
     print(model.summary())

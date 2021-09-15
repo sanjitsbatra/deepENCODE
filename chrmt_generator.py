@@ -24,12 +24,13 @@ TSS_DATA = "/scratch/sanjit/ENCODE_Imputation_Challenge/" \
            "2_April_2020/Data/Gene_Expression/" \
            "T01.tsv.TPM.headered"
 
-CELL_TYPES = ["T" + "{0:0=2d}".format(i) for i in range(1, 13)]
+CELL_TYPES = ["T" + "{0:0=2d}".format(i) for i in range(1, 14)]
 
 ASSAY_TYPES = ["A" + "{0:0=2d}".format(i) for i in range(2, 8)]
+ACTIVE_ASSAY_TYPES = ["A" + "{0:0=2d}".format(i) for i in [4]]
 
-training_chroms = ["chr"+str(i) for i in range(21, 23, 2)]
-validation_chroms = ["chr"+str(i) for i in range(22, 23, 2)]
+training_chroms = ["chr"+str(i) for i in range(4, 23, 2)]
+validation_chroms = ["chr"+str(i) for i in range(5, 23, 2)]
 testing_chroms = ["chr2", "chr9"]  # ["chr"+str(i) for i in range(1, 3, 1)]
 
 EPS = 0.000001
@@ -121,11 +122,11 @@ class EpigenomeGenerator(Sequence):
                       file=sys.stderr)
                 continue
 
-        if(self.mode == "training"):
+        if("training" in self.mode):
             self.chroms = training_chroms
-        elif(self.mode == "validation"):
+        elif("validation" in self.mode):
             self.chroms = validation_chroms
-        elif(self.mode == "testing"):
+        elif("testing" in self.mode):
             self.chroms = testing_chroms
 
         for chrom in self.chroms:
@@ -137,9 +138,15 @@ class EpigenomeGenerator(Sequence):
                     if(isfile(f_name)):
                         print("Loading Epigenome data", f_name,
                               file=sys.stderr)
-                        current_epigenome = np.load(f_name)
-                        current_epigenome = preprocess_epigenome(
-                                            current_epigenome)
+
+                        if(assay_type in ACTIVE_ASSAY_TYPES):
+                            current_epigenome = np.load(f_name)
+                            current_epigenome = preprocess_epigenome(
+                                                current_epigenome)
+                        else:
+                            # Zero out NON-ACTIVE ASSAY_TYPES
+                            current_epigenome = 0.0 * np.load(f_name)
+
                         epigenome.append(current_epigenome)
                     else:
                         print(assay_type, "missing in", cell_type, chrom)
@@ -163,7 +170,8 @@ class EpigenomeGenerator(Sequence):
                 else:
                     print("Transcriptome data missing", f_transcriptome_pos,
                           f_transcriptome_neg, file=sys.stderr)
-                    sys.exit(-2)
+                    transcriptome_pos = np.asarray([0])
+                    transcriptome_neg = np.asarray([0])
 
                 if(chrom not in self.epigenome):
                     self.epigenome[chrom] = {}
@@ -251,7 +259,7 @@ class EpigenomeGenerator(Sequence):
                 '''
                 # continue
             else:
-                if((self.mode == "training") or (self.mode == "validation")):
+                if(("training" in self.mode) or ("validation" in self.mode)):
                     # Randomly sample a cell type
                     random_cell_type_index = randrange(len(CELL_TYPES))
                     # print("Sampled cell type", random_cell_type_index,
@@ -309,9 +317,13 @@ class TranscriptomeGenerator(EpigenomeGenerator):
 
         number_of_data_points = self.batch_size
         while(number_of_data_points > 0):
+            if("genome_wide" in self.mode):
+                genome_wide = True
+            else:
+                genome_wide = False
+
             # Based on Jeff and Kishore's suggestion
             # we want each batch to have atleast 20% TSS training
-            genome_wide = True
             random_number = randrange(self.batch_size)
             if((random_number > int(self.batch_size/5))
                and (genome_wide)):
@@ -330,13 +342,13 @@ class TranscriptomeGenerator(EpigenomeGenerator):
                 start = int(int(start)/RESOLUTION)
 
             # print(chrom, start, strand, file=sys.stderr)
-            if(self.mode == "training"):
+            if("training" in self.mode):
                 if(chrom not in training_chroms):
                     continue
-            elif(self.mode == "validation"):
+            elif("validation" in self.mode):
                 if(chrom not in validation_chroms):
                     continue
-            elif(self.mode == "testing"):
+            elif("testing" in self.mode):
                 if(chrom not in testing_chroms):
                     continue
 
@@ -373,28 +385,34 @@ class TranscriptomeGenerator(EpigenomeGenerator):
                 cell_type_index = randrange(len(CELL_TYPES))
                 cell_type = CELL_TYPES[cell_type_index]
 
+                # Currently we don't have RNA-seq TPMs for T13 (HEK293T)
+                if(cell_type == "T13"):
+
+                    cell_type = "T05"
+
                 x = (self.epigenome[chrom][cell_type]
                                    [:,
                                     start - (self.window_size // 2):
                                     start + (self.window_size // 2) + 1])
                 x = np.transpose(x)
 
-                if(strand == "+"):
-                    y = (self.transcriptome_pos[chrom]
-                                               [cell_type]
-                                               [start])
-                else:
-                    x = x[::-1, :]
-                    y = (self.transcriptome_neg[chrom]
-                                               [cell_type]
-                                               [start])
+                if(True):
 
-                '''
-                # We only want to train on points that are greater than 0
-                if(abs(y) < EPS):
+                    if(strand == "+"):
+                        y = (self.transcriptome_pos[chrom]
+                                                   [cell_type]
+                                                   [start])
+                    else:
+                        x = x[::-1, :]
+                        y = (self.transcriptome_neg[chrom]
+                                                   [cell_type]
+                                                   [start])
+
+                # TSS only: train only on points that are greater than 0
+                if((genome_wide is False) and
+                   (abs(y) < EPS) and
+                   ("training" in self.mode)):
                     continue
-                # print("Found TSS", cell_type, chrom, start, end, y)
-                '''
 
                 X[number_of_data_points-1] = x
                 Y[number_of_data_points-1] = y
@@ -444,15 +462,22 @@ class TranscriptomePredictor(EpigenomeGenerator):
                                 i + (self.window_size // 2) + 1])
             x = np.transpose(x)
 
-            if(self.strand == "+"):
-                y = (self.transcriptome_pos[self.chrom]
-                                           [cell_type]
-                                           [i])
+            # Currently we don't have RNA-seq TPMs for T13 (HEK293T)
+            if(cell_type == "T13"):
+
+                y = 0
             else:
-                x = x[::-1, :]
-                y = (self.transcriptome_neg[self.chrom]
-                                           [cell_type]
-                                           [i])
+
+                if(self.strand == "+"):
+                    y = (self.transcriptome_pos[self.chrom]
+                                               [cell_type]
+                                               [i])
+                else:
+                    x = x[::-1, :]
+                    y = (self.transcriptome_neg[self.chrom]
+                                               [cell_type]
+                                               [i])
+
             X[i-self.start] = x
             Y[i-self.start] = y
 
