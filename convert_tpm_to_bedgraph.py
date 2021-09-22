@@ -1,19 +1,22 @@
 # This script accepts as input TPM values for a cell line
-# It then converts it into two 100bp resolution npy arrays; one for each strand
-# It also performs a log10 of the TPM values for normality
+# It then converts it into two RESOLUTION bp resolution npy arrays
+# (one for each strand)
+# It also performs a log10(x+1) of the TPM values for normality
 import numpy as np
 import sys
 
 
 reference_npy_path = "/scratch/sanjit/ENCODE_Imputation_Challenge/" \
-                     "2_April_2020/Data/100bp_12_7_Data_20_July_2020/T12A07"
+                    "2_April_2020/Data/25bp_Data/T12A07"
+# "2_April_2020/Data/100bp_12_7_Data_20_July_2020/T12A07"
 
 output_npy_path = "/scratch/sanjit/ENCODE_Imputation_Challenge/" \
-                  "2_April_2020/Data/Gene_Expression/genome_wide_TPM_npy"
+                "2_April_2020/Data/Gene_Expression/25bp_genome_wide_TPM_npy"
+#                   "2_April_2020/Data/Gene_Expression/genome_wide_TPM_npy"
 
 chroms = ["chr"+str(i) for i in range(1, 23, 1)]
 
-RESOLUTION = 100  # 100bp is the resolution of the npy tracks
+RESOLUTION = 25  # RESOLUTION bp is the resolution of the npy tracks
 
 
 if __name__ == '__main__':

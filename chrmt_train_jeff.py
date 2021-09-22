@@ -4,17 +4,20 @@ from chrmt_generator import EpigenomeGenerator, TranscriptomeGenerator
 from chrmt_generator import ASSAY_TYPES, MASK_VALUE, EPS
 from tensorflow.keras.callbacks import LearningRateScheduler
 from tensorflow.keras.models import Model
-from tensorflow.keras.layers import BatchNormalization, Activation
+from tensorflow.keras.layers import BatchNormalization, Activation, Dropout
 from tensorflow.keras.layers import Conv1D, Input, add
-from tensorflow.keras.layers import Cropping1D
-# from tensorflow.keras.layers import Flatten, Dense
+# from tensorflow.keras.layers import Cropping1D
+from tensorflow.keras.layers import Flatten, Dense
 # from keras.losses import logcosh
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.callbacks import ModelCheckpoint
-# import tensorflow as tf
-from keras import backend as K
+import tensorflow as tf
+from tensorflow.keras import backend as K
 from tqdm.keras import TqdmCallback
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+
+
+DROPOUT_PROB = 0.75
 
 
 def lr_scheduler(epoch):
@@ -23,8 +26,10 @@ def lr_scheduler(epoch):
         return 2e-3
     elif epoch < 90:
         return 1e-3
-    else:
+    elif epoch < 200:
         return 5e-4
+    else:
+        return 1e-4
 
 
 # Compute a loss that incorporates both mean and variance
@@ -93,12 +98,14 @@ def custom_loss(yTrue, yPred):
 
 def BAC(x_input, conv_kernel_size, num_filters):
 
-    x_output = BatchNormalization()(x_input)
-    x_output = Activation('relu')(x_output)
+    # x_output = BatchNormalization()(x_input)
+    # x_output = Activation('relu')(x_output)
     x_output = Conv1D(kernel_size=conv_kernel_size,
                       filters=num_filters,
-                      padding='same')(x_output)
-
+                      padding='same')(x_input)
+    x_output = BatchNormalization()(x_output)
+    x_output = Activation('relu')(x_output)
+    x_output = BatchNormalization()(x_output)
     return x_output
 
 
@@ -106,7 +113,7 @@ def residual_block(x, conv_kernel_size, num_filters):
 
     x_1 = BAC(x, conv_kernel_size, num_filters)
     x_2 = BAC(x_1, conv_kernel_size, num_filters)
-    output = add([x, x_2])
+    output = Dropout(DROPOUT_PROB)(add([x, x_2]))
 
     return output
 
@@ -149,21 +156,26 @@ def create_transcriptome_cnn(number_of_assays,
     inputs = Input(shape=(window_size, number_of_assays), name='input')
 
     assert(padding == "same")
-
+    # should drop out whole tracks
+    x = Dropout(DROPOUT_PROB,
+                noise_shape=(tf.shape(inputs)[0], 1, inputs.shape[2]))(inputs)
     # Initial convolution
-    x = BAC(inputs, conv_kernel_size, num_filters)
+    x = Dropout(DROPOUT_PROB)(BAC(inputs, conv_kernel_size, num_filters))
 
     # Perform multiple convolutional layers
     for i in range(num_convolutions):
         x = residual_block(x, conv_kernel_size, num_filters)
 
     # Final convolution
-    x = BAC(x, conv_kernel_size, 1)
-    outputs = Cropping1D(cropping=window_size // 2)(x)
+    # x = BAC(x, conv_kernel_size, 1)
+    # outputs = Cropping1D(cropping=window_size // 2)(x)
 
-    # x = Flatten()(x)
-    # x = Dense(64, activation='relu')(x)
-    # outputs = Dense(number_of_outputs, activation='linear')(x)
+    x = Flatten()(x)
+    x = Dense(128, activation='relu')(x)
+    x = Dropout(DROPOUT_PROB)(BatchNormalization()(x))
+    x = Dense(128, activation='relu')(x)
+    x = Dropout(DROPOUT_PROB)(BatchNormalization()(x))
+    outputs = Dense(number_of_outputs, activation='linear')(x)
 
     # construct the CNN
     model = Model(inputs=inputs, outputs=outputs)
@@ -173,12 +185,12 @@ def create_transcriptome_cnn(number_of_assays,
 
 if __name__ == '__main__':
 
-    epochs = 200
+    epochs = 1000
     steps_per_epoch = 100
 
     run_name_prefix = sys.argv[1]
     framework = sys.argv[2]  # epigenome or transcriptome
-    window_size = int(sys.argv[3])  # => Length of window / RESOLUTION bp
+    window_size = int(sys.argv[3])  # => Length of window / 100bp
     batch_size = int(sys.argv[4])
     num_filters = int(sys.argv[5])
     conv_kernel_size = 11

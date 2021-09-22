@@ -14,36 +14,50 @@ from random import randrange
 import pyranges as pr
 
 
-DATA_FOLDER = '../Data/100bp_12_7_Data_20_July_2020'
-
-TRANSCRIPTOME_DATA_FOLDER = "/scratch/sanjit/ENCODE_Imputation_Challenge/" \
-                            "2_April_2020/Data/Gene_Expression/" \
-                            "genome_wide_TPM_npy"
-
-TSS_DATA = "/scratch/sanjit/ENCODE_Imputation_Challenge/" \
-           "2_April_2020/Data/Gene_Expression/" \
-           "T01.tsv.TPM.headered"
-
 CELL_TYPES = ["T" + "{0:0=2d}".format(i) for i in range(1, 14)]
 
-ASSAY_TYPES = ["A" + "{0:0=2d}".format(i) for i in range(2, 8)]
-ACTIVE_ASSAY_TYPES = ["A" + "{0:0=2d}".format(i) for i in [4]]
+ASSAY_TYPES = ["A" + "{0:0=2d}".format(i) for i in range(1, 8)]
+ACTIVE_ASSAY_TYPES = ["A" + "{0:0=2d}".format(i) for i in range(1, 8)]
 
 training_chroms = ["chr"+str(i) for i in range(4, 23, 2)]
 validation_chroms = ["chr"+str(i) for i in range(5, 23, 2)]
 testing_chroms = ["chr2", "chr9"]  # ["chr"+str(i) for i in range(1, 3, 1)]
 
+DEBUG = False
+PRINT_FEATURES = True
+
 EPS = 0.000001
 
 MASK_VALUE = -10
 
-RESOLUTION = 100
+RESOLUTION = 25
 
 EDGE_CUSHION = 1000  # corresponds to 100Kb from the edge of chromosomes
+
+if(RESOLUTION == 100):
+    DATA_FOLDER = '../Data/100bp_Data'
+    TRANSCRIPTOME_DATA_FOLDER = "/scratch/sanjit/ENCODE_Imputation_Challenge" \
+                                "/2_April_2020/Data/Gene_Expression/" \
+                                "100bp_genome_wide_TPM_npy"
+elif(RESOLUTION == 25):
+    DATA_FOLDER = '../Data/25bp_Data'
+    TRANSCRIPTOME_DATA_FOLDER = "/scratch/sanjit/ENCODE_Imputation_Challenge" \
+                                "/2_April_2020/Data/Gene_Expression/" \
+                                "25bp_genome_wide_TPM_npy"
+else:
+    print("RESOLUTION has to be 25bp or 100bp!")
+    sys.exit(-2)
+
+TSS_DATA = "/scratch/sanjit/ENCODE_Imputation_Challenge/" \
+           "2_April_2020/Data/Gene_Expression/" \
+           "T01.tsv.TPM.headered"
 
 # We don't want to train in regions that are Blacklisted or have Gaps
 Blacklisted_Regions = pr.read_bed('../Data/hg38.Blacklisted.bed', as_df=False)
 Gap_Regions = pr.read_bed('../Data/hg38.Gaps.bed', as_df=False)
+
+if(PRINT_FEATURES):
+    f_output = open("../Data/Training_Data.csv", 'w')
 
 
 def check_region(chrom, start, end):
@@ -75,13 +89,12 @@ def create_masked(y, p):
         else:
             y[i, :] = MASK_VALUE
 
-    '''
-    # This can be used to debug how many entries are masked
-    if(counter == 0):
-        print("No entries have been masked", file=sys.stderr)
-    elif(counter == x.shape[0]):
-        print("All entries have been masked", file=sys.stderr)
-    '''
+    if(DEBUG):
+        # This can be used to debug how many entries are masked
+        if(counter == 0):
+            print("No entries have been masked", file=sys.stderr)
+        elif(counter == x.shape[0]):
+            print("All entries have been masked", file=sys.stderr)
 
     return x, y
 
@@ -231,19 +244,18 @@ class EpigenomeGenerator(Sequence):
             chrom, start = self.idx_to_chrom_and_start(idx)
             end = start + self.window_size
 
-            # Very useful for debugging!
-            # print("Batch Number", batch_number, chrom, start, end,
-            #       file=sys.stderr)
+            if(DEBUG):
+                print("Batch Number", batch_number, chrom, start, end,
+                      file=sys.stderr)
 
             if((start < EDGE_CUSHION) or
                (end > self.chrom_lens[chrom] - EDGE_CUSHION)):
                 # We are too close to the edges of the chromosome
-                '''
-                print("We are too close to the edge!",
-                      batch_number, idx, chrom, start,
-                      end, self.chrom_lens[chrom],
-                      file=sys.stderr)
-                '''
+                if(DEBUG):
+                    print("We are too close to the edge!",
+                          batch_number, idx, chrom, start,
+                          end, self.chrom_lens[chrom],
+                          file=sys.stderr)
                 continue
             # TODO: This slows down training significantly
             # elif(check_region(chrom, start, end) == "bad"):
@@ -251,19 +263,19 @@ class EpigenomeGenerator(Sequence):
                 # a Blacklisted Region or a Gap Region in hg38
                 # So we create the i'th data point to be a dummy with all 0s
                 # Since X and Y are aleady 0s, we do nothing
-                '''
-                print("Data point in Blacklisted or Gap region",
-                      batch_number, idx, chrom, start, d,
-                      end, self.chrom_lens[chrom],
-                      file=sys.stderr)
-                '''
+                # if(DEBUG):
+                #     print("Data point in Blacklisted or Gap region",
+                #           batch_number, idx, chrom, start, d,
+                #           end, self.chrom_lens[chrom],
+                #           file=sys.stderr)
                 # continue
             else:
                 if(("training" in self.mode) or ("validation" in self.mode)):
                     # Randomly sample a cell type
                     random_cell_type_index = randrange(len(CELL_TYPES))
-                    # print("Sampled cell type", random_cell_type_index,
-                    #       "for training", file=sys.stderr)
+                    if(DEBUG):
+                        print("Sampled cell type", random_cell_type_index,
+                              "for training", file=sys.stderr)
                 else:
                     random_cell_type_index = 0  # Fix cell type for testing
 
@@ -277,12 +289,11 @@ class EpigenomeGenerator(Sequence):
                 x_masked, y_masked = create_masked(y, self.masking_probability)
                 # print(x_masked, y_masked)
 
-                '''
-                if(x_masked.shape[0] != self.window_size):
-                    print("Found the wrong shape!",
-                          chrom, start, end, x_masked.shape, y_masked.shape,
-                          file=sys.stderr)
-                '''
+                if(DEBUG):
+                    if(x_masked.shape[0] != self.window_size):
+                        print("Found the wrong shape!",
+                              chrom, start, end, x_masked.shape,
+                              y_masked.shape, file=sys.stderr)
 
                 X[number_of_data_points-1] = x_masked
                 Y[number_of_data_points-1] = y_masked
@@ -341,7 +352,6 @@ class TranscriptomeGenerator(EpigenomeGenerator):
                 chrom, start, strand = self.TSS[random_idx]
                 start = int(int(start)/RESOLUTION)
 
-            # print(chrom, start, strand, file=sys.stderr)
             if("training" in self.mode):
                 if(chrom not in training_chroms):
                     continue
@@ -354,19 +364,18 @@ class TranscriptomeGenerator(EpigenomeGenerator):
 
             end = start + self.window_size
 
-            # Very useful for debugging!
-            # print("Batch Number", batch_number, chrom, start, end,
-            #       file=sys.stderr)
+            if(DEBUG):
+                print("Batch Number", batch_number, chrom, start, end,
+                      file=sys.stderr)
 
             if((start < EDGE_CUSHION) or
                (end > self.chrom_lens[chrom] - EDGE_CUSHION)):
                 # We are too close to the edges of the chromosome
-                '''
-                print("We are too close to the edge!",
-                      batch_number, idx, chrom, start,
-                      end, self.chrom_lens[chrom],
-                      file=sys.stderr)
-                '''
+                if(DEBUG):
+                    print("We are too close to the edge!",
+                          batch_number, idx, chrom, start,
+                          end, self.chrom_lens[chrom],
+                          file=sys.stderr)
                 continue
             # TODO: This slows down training significantly
             # elif(check_region(chrom, start, end) == "bad"):
@@ -374,12 +383,11 @@ class TranscriptomeGenerator(EpigenomeGenerator):
                 # a Blacklisted Region or a Gap Region in hg38
                 # So we create the i'th data point to be a dummy with all 0s
                 # Since X and Y are aleady 0s, we do nothing
-                '''
-                print("Data point in Blacklisted or Gap region",
-                      batch_number, idx, chrom, start, d,
-                      end, self.chrom_lens[chrom],
-                      file=sys.stderr)
-                '''
+                # if(DEBUG):
+                #     print("Data point in Blacklisted or Gap region",
+                #           batch_number, idx, chrom, start, d,
+                #           end, self.chrom_lens[chrom],
+                #           file=sys.stderr)
                 # continue
             else:
                 cell_type_index = randrange(len(CELL_TYPES))
@@ -390,6 +398,10 @@ class TranscriptomeGenerator(EpigenomeGenerator):
 
                     cell_type = "T05"
 
+                if(DEBUG):
+                    print(self.epigenome[chrom][cell_type].shape, start,
+                          file=sys.stderr)
+
                 x = (self.epigenome[chrom][cell_type]
                                    [:,
                                     start - (self.window_size // 2):
@@ -397,6 +409,10 @@ class TranscriptomeGenerator(EpigenomeGenerator):
                 x = np.transpose(x)
 
                 if(True):
+
+                    if(DEBUG):
+                        print(self.transcriptome_pos[chrom][cell_type].shape,
+                              start, file=sys.stderr)
 
                     if(strand == "+"):
                         y = (self.transcriptome_pos[chrom]
@@ -407,6 +423,26 @@ class TranscriptomeGenerator(EpigenomeGenerator):
                         y = (self.transcriptome_neg[chrom]
                                                    [cell_type]
                                                    [start])
+                if(PRINT_FEATURES):
+                    for assay_index in range(1, 8):
+                        feature = x[:, assay_index-1]
+                        if(feature.shape[0] != self.window_size):
+                            print(cell_type, chrom, start,
+                                  strand, assay_index, feature.shape, feature,
+                                  file=sys.stderr)
+                            sys.exit(-3)
+                        output_string = np.array2string(feature,
+                                                        separator=',')
+                        output_string = output_string.lstrip('[').rstrip(']')
+                        output_string = output_string.replace('\n', '')
+                        output_string = output_string.replace(', ', ',')
+                        output_string = output_string.replace(' ,', ',')
+                        output_list = output_string.split(",")
+                        if(len(output_list) != self.window_size):
+                            print(output_list, output_string,
+                                  file=sys.stderr)
+                        print(output_string, y, cell_type, chrom, start,
+                              strand, assay_index, sep=',', file=f_output)
 
                 # TSS only: train only on points that are greater than 0
                 if((genome_wide is False) and
@@ -448,9 +484,9 @@ class TranscriptomePredictor(EpigenomeGenerator):
         Y = np.zeros((self.batch_size, 1))
 
         for i in range(self.start, self.start+1):
-            # Very useful for debugging!
-            print("Batch Number", batch_number, i, self.chrom, self.start,
-                  self.strand, file=sys.stderr)
+            if(DEBUG):
+                print("Batch Number", batch_number, i, self.chrom, self.start,
+                      self.strand, file=sys.stderr)
 
             cell_type_index = self.cell_type
             cell_type = CELL_TYPES[cell_type_index]

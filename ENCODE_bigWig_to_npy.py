@@ -21,10 +21,14 @@ for chrom in ALLOWED_CHROMS:
     # At the end of the chromosome there are NaNs in the bigwig
     binned_v = np.nan_to_num(binned_v)
 
+    '''
     # Bin the numpy array into 100bp instead of 25bp
     temp_output = np.asarray([0] * (4 - binned_v.shape[0] % 4))
     final_npy = np.concatenate([binned_v, temp_output]).reshape(-1, 4)
     final_npy = np.mean(final_npy, axis=1)
+    '''
+
+    final_npy = binned_v
 
     np.save(output_prefix+"."+chrom+".npy", final_npy)
 
