@@ -19,12 +19,12 @@ CELL_TYPES = ["T" + "{0:0=2d}".format(i) for i in range(1, 14)]
 ASSAY_TYPES = ["A" + "{0:0=2d}".format(i) for i in range(1, 8)]
 ACTIVE_ASSAY_TYPES = ["A" + "{0:0=2d}".format(i) for i in range(1, 8)]
 
-training_chroms = ["chr"+str(i) for i in range(4, 23, 2)]
-validation_chroms = ["chr"+str(i) for i in range(5, 23, 2)]
-testing_chroms = ["chr2", "chr9"]  # ["chr"+str(i) for i in range(1, 3, 1)]
+training_chroms = ["chr"+str(i) for i in range(1, 23, 2)]
+validation_chroms = ["chr"+str(i) for i in range(2, 23, 2)]
+testing_chroms = ["chr"+str(i) for i in [2, 6, 9, 11, 17]]
 
 DEBUG = False
-PRINT_FEATURES = True
+PRINT_FEATURES = False
 
 EPS = 0.000001
 

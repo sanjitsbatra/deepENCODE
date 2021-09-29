@@ -268,6 +268,8 @@ if __name__ == '__main__':
               callbacks=[checkpoint, lr_schedule, tqdm_keras],
               validation_data=validation_generator,
               validation_steps=steps_per_epoch,
-              steps_per_epoch=steps_per_epoch)
+              steps_per_epoch=steps_per_epoch,
+              max_queue_size=0,
+              workers=0)
 
     os._exit(1)
