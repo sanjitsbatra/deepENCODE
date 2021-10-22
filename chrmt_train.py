@@ -173,7 +173,7 @@ def create_transcriptome_cnn(number_of_assays,
 
 if __name__ == '__main__':
 
-    epochs = 200
+    epochs = 5000
     steps_per_epoch = 100
 
     run_name_prefix = sys.argv[1]

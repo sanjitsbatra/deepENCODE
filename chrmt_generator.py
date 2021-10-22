@@ -15,16 +15,16 @@ import pyranges as pr
 
 
 CELL_TYPES = ["T" + "{0:0=2d}".format(i) for i in range(1, 14)]
-
 ASSAY_TYPES = ["A" + "{0:0=2d}".format(i) for i in range(1, 8)]
 ACTIVE_ASSAY_TYPES = ["A" + "{0:0=2d}".format(i) for i in range(1, 8)]
 
-training_chroms = ["chr"+str(i) for i in range(1, 23, 2)]
-validation_chroms = ["chr"+str(i) for i in range(2, 23, 2)]
+training_chroms = ["chr"+str(i) for i in range(1, 23)]
+# [1, 3, 4, 5, 7, 13, 15, 19, 21]]
+validation_chroms = ["chr"+str(i) for i in range(8, 9, 2)]
 testing_chroms = ["chr"+str(i) for i in [2, 6, 9, 11, 17]]
 
 DEBUG = False
-PRINT_FEATURES = False
+PRINT_FEATURES = True
 
 EPS = 0.000001
 
@@ -40,7 +40,7 @@ if(RESOLUTION == 100):
                                 "/2_April_2020/Data/Gene_Expression/" \
                                 "100bp_genome_wide_TPM_npy"
 elif(RESOLUTION == 25):
-    DATA_FOLDER = '../Data/25bp_Data'
+    DATA_FOLDER = '../Data/Transformed_25bp_Data'
     TRANSCRIPTOME_DATA_FOLDER = "/scratch/sanjit/ENCODE_Imputation_Challenge" \
                                 "/2_April_2020/Data/Gene_Expression/" \
                                 "25bp_genome_wide_TPM_npy"
@@ -393,11 +393,6 @@ class TranscriptomeGenerator(EpigenomeGenerator):
                 cell_type_index = randrange(len(CELL_TYPES))
                 cell_type = CELL_TYPES[cell_type_index]
 
-                # Currently we don't have RNA-seq TPMs for T13 (HEK293T)
-                if(cell_type == "T13"):
-
-                    cell_type = "T05"
-
                 if(DEBUG):
                     print(self.epigenome[chrom][cell_type].shape, start,
                           file=sys.stderr)
@@ -444,11 +439,13 @@ class TranscriptomeGenerator(EpigenomeGenerator):
                         print(output_string, y, cell_type, chrom, start,
                               strand, assay_index, sep=',', file=f_output)
 
+                '''
                 # TSS only: train only on points that are greater than 0
                 if((genome_wide is False) and
                    (abs(y) < EPS) and
                    ("training" in self.mode)):
                     continue
+                '''
 
                 X[number_of_data_points-1] = x
                 Y[number_of_data_points-1] = y
@@ -498,21 +495,15 @@ class TranscriptomePredictor(EpigenomeGenerator):
                                 i + (self.window_size // 2) + 1])
             x = np.transpose(x)
 
-            # Currently we don't have RNA-seq TPMs for T13 (HEK293T)
-            if(cell_type == "T13"):
-
-                y = 0
+            if(self.strand == "+"):
+                y = (self.transcriptome_pos[self.chrom]
+                                           [cell_type]
+                                           [i])
             else:
-
-                if(self.strand == "+"):
-                    y = (self.transcriptome_pos[self.chrom]
-                                               [cell_type]
-                                               [i])
-                else:
-                    x = x[::-1, :]
-                    y = (self.transcriptome_neg[self.chrom]
-                                               [cell_type]
-                                               [i])
+                x = x[::-1, :]
+                y = (self.transcriptome_neg[self.chrom]
+                                           [cell_type]
+                                           [i])
 
             X[i-self.start] = x
             Y[i-self.start] = y
