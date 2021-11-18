@@ -13,7 +13,8 @@ output_prefix = sys.argv[2]
 for chrom in ALLOWED_CHROMS:
 
     start_t = time.clock()
-    v = bw.values(chrom, 0, bw.chroms(chrom), numpy=True)
+    # Perform nan to num after parsing bw file to remove nans before averaging
+    v = np.nan_to_num( bw.values(chrom, 0, bw.chroms(chrom), numpy=True) )
 
     # Now we bin the chromosome into BIN_SIZE bp bins
     binned_v = [np.mean(v[i:i+BIN_SIZE]) for i in range(0, len(v), BIN_SIZE)]

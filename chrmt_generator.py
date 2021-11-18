@@ -14,9 +14,10 @@ from random import randrange
 import pyranges as pr
 
 
-CELL_TYPES = ["T" + "{0:0=2d}".format(i) for i in range(1, 14)]
-ASSAY_TYPES = ["A" + "{0:0=2d}".format(i) for i in range(1, 8)]
-ACTIVE_ASSAY_TYPES = ["A" + "{0:0=2d}".format(i) for i in range(1, 8)]
+CELL_TYPES = ["T01", "T02", "T05", "T06", "T13"]
+# ["T" + "{0:0=2d}".format(i) for i in range(13, 14)]
+ASSAY_TYPES = ["A" + "{0:0=2d}".format(i) for i in range(1, 10)]
+ACTIVE_ASSAY_TYPES = ["A" + "{0:0=2d}".format(i) for i in range(1, 10)]
 
 training_chroms = ["chr"+str(i) for i in range(1, 23)]
 # [1, 3, 4, 5, 7, 13, 15, 19, 21]]
@@ -24,7 +25,7 @@ validation_chroms = ["chr"+str(i) for i in range(8, 9, 2)]
 testing_chroms = ["chr"+str(i) for i in [2, 6, 9, 11, 17]]
 
 DEBUG = False
-PRINT_FEATURES = True
+PRINT_FEATURES = False
 
 EPS = 0.000001
 
@@ -419,7 +420,7 @@ class TranscriptomeGenerator(EpigenomeGenerator):
                                                    [cell_type]
                                                    [start])
                 if(PRINT_FEATURES):
-                    for assay_index in range(1, 8):
+                    for assay_index in range(1, 10):
                         feature = x[:, assay_index-1]
                         if(feature.shape[0] != self.window_size):
                             print(cell_type, chrom, start,
