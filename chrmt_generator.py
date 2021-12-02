@@ -10,22 +10,23 @@ import numpy as np
 from os.path import isfile
 from tensorflow.python.keras.utils.data_utils import Sequence
 import sys
+import os
 from random import randrange
 import pyranges as pr
 
 
-CELL_TYPES = ["T01", "T02", "T05", "T06", "T13"]
+CELL_TYPES = ["T01", "T02", "T05", "T06", "T07", "T13"]
 # ["T" + "{0:0=2d}".format(i) for i in range(13, 14)]
 ASSAY_TYPES = ["A" + "{0:0=2d}".format(i) for i in range(1, 10)]
 ACTIVE_ASSAY_TYPES = ["A" + "{0:0=2d}".format(i) for i in range(1, 10)]
 
-training_chroms = ["chr"+str(i) for i in range(1, 23)]
+training_chroms = ["chr"+str(i) for i in range(1, 23, 1)] + ["chrX"]
 # [1, 3, 4, 5, 7, 13, 15, 19, 21]]
 validation_chroms = ["chr"+str(i) for i in range(8, 9, 2)]
-testing_chroms = ["chr"+str(i) for i in [2, 6, 9, 11, 17]]
+testing_chroms = ["chr"+str(i) for i in [2, 9]]
 
-DEBUG = False
-PRINT_FEATURES = False
+DEBUG = True
+PRINT_FEATURES = True
 
 EPS = 0.000001
 
@@ -58,7 +59,7 @@ Blacklisted_Regions = pr.read_bed('../Data/hg38.Blacklisted.bed', as_df=False)
 Gap_Regions = pr.read_bed('../Data/hg38.Gaps.bed', as_df=False)
 
 if(PRINT_FEATURES):
-    f_output = open("../Data/Training_Data.csv", 'w')
+    f_output = open("../Data/Training_Data.csv", 'a')
 
 
 def check_region(chrom, start, end):
@@ -311,9 +312,13 @@ class TranscriptomeGenerator(EpigenomeGenerator):
 
         self.window_size = window_size
         self.batch_size = batch_size
-        self.shuffle = shuffle
         self.mode = mode
         self.masking_probability = masking_probability
+
+        if("generate_dataframe" in self.mode):
+            self.shuffle = False
+        else:
+            self.shuffle = shuffle
 
         EpigenomeGenerator.__init__(self,
                                     self.window_size,
@@ -348,6 +353,17 @@ class TranscriptomeGenerator(EpigenomeGenerator):
                     strand = "+"
                 else:
                     strand = "-"
+            elif("generate_dataframe" in self.mode):
+                TSS_idx = (batch_number * self.batch_size)
+                TSS_idx += number_of_data_points
+                if(TSS_idx >= len(self.TSS)):
+                    print("We have parsed all genes", file=sys.stderr)
+                    os._exit(1)
+                if(DEBUG):
+                    print("Dataframe: ", batch_number, number_of_data_points,
+                          TSS_idx, file=sys.stderr)
+                chrom, start, strand = self.TSS[TSS_idx]
+                start = int(int(start)/RESOLUTION)
             else:
                 random_idx = randrange(len(self.TSS))
                 chrom, start, strand = self.TSS[random_idx]
@@ -391,8 +407,11 @@ class TranscriptomeGenerator(EpigenomeGenerator):
                 #           file=sys.stderr)
                 # continue
             else:
-                cell_type_index = randrange(len(CELL_TYPES))
-                cell_type = CELL_TYPES[cell_type_index]
+                if("generate_dataframe" in self.mode):
+                    cell_type = self.mode[-3:]
+                else:
+                    cell_type_index = randrange(len(CELL_TYPES))
+                    cell_type = CELL_TYPES[cell_type_index]
 
                 if(DEBUG):
                     print(self.epigenome[chrom][cell_type].shape, start,
@@ -419,6 +438,10 @@ class TranscriptomeGenerator(EpigenomeGenerator):
                         y = (self.transcriptome_neg[chrom]
                                                    [cell_type]
                                                    [start])
+
+                # TODO: 1 December 2021
+                # We lose ~1k genes because TSSs lie within RESOLUTION
+                # For those, print out exact TSS in addition to binned TSS
                 if(PRINT_FEATURES):
                     for assay_index in range(1, 10):
                         feature = x[:, assay_index-1]

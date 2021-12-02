@@ -173,9 +173,6 @@ def create_transcriptome_cnn(number_of_assays,
 
 if __name__ == '__main__':
 
-    epochs = 5000
-    steps_per_epoch = 100
-
     run_name_prefix = sys.argv[1]
     framework = sys.argv[2]  # epigenome or transcriptome
     window_size = int(sys.argv[3])  # => Length of window / RESOLUTION bp
@@ -190,6 +187,12 @@ if __name__ == '__main__':
         print("Loss should be mse or mle", file=sys.stderr)
         sys.exit(-1)
     genome_wide_flag = sys.argv[9]
+
+    epochs = 100
+    if("generate_dataframe" in genome_wide_flag):
+        steps_per_epoch = 100000
+    else:
+        steps_per_epoch = 100
 
     run_name = (run_name_prefix + "_" + framework + "_" + str(window_size) +
                 "_" + str(num_filters) + "_" + str(num_convolutions) +
