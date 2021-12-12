@@ -1,0 +1,1 @@
+rm -rf ../Data/Training_Data.csv && for celltype in {"T01","T02","T05","T06","T07","T13"};do python -W ignore chrmt_train.py ../Models/Run transcriptome 401 1 2 2 0.0 mse TSS_only.generate_dataframe.${celltype} ;done

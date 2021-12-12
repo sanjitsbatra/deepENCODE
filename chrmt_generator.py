@@ -15,17 +15,17 @@ from random import randrange
 import pyranges as pr
 
 
-CELL_TYPES = ["T01", "T02", "T05", "T06", "T07", "T13"]
+CELL_TYPES = ["T13"] #  "T01", "T02", "T05", "T06", "T07", "T13"]
 # ["T" + "{0:0=2d}".format(i) for i in range(13, 14)]
-ASSAY_TYPES = ["A" + "{0:0=2d}".format(i) for i in range(1, 10)]
-ACTIVE_ASSAY_TYPES = ["A" + "{0:0=2d}".format(i) for i in range(1, 10)]
+ASSAY_TYPES = ["A" + "{0:0=2d}".format(i) for i in range(1, 11)]
+ACTIVE_ASSAY_TYPES = ["A" + "{0:0=2d}".format(i) for i in range(1, 11)]
 
 training_chroms = ["chr"+str(i) for i in range(1, 23, 1)] + ["chrX"]
 # [1, 3, 4, 5, 7, 13, 15, 19, 21]]
 validation_chroms = ["chr"+str(i) for i in range(8, 9, 2)]
 testing_chroms = ["chr"+str(i) for i in [2, 9]]
 
-DEBUG = True
+DEBUG = False
 PRINT_FEATURES = True
 
 EPS = 0.000001
@@ -443,7 +443,7 @@ class TranscriptomeGenerator(EpigenomeGenerator):
                 # We lose ~1k genes because TSSs lie within RESOLUTION
                 # For those, print out exact TSS in addition to binned TSS
                 if(PRINT_FEATURES):
-                    for assay_index in range(1, 10):
+                    for assay_index in range(1, 11):
                         feature = x[:, assay_index-1]
                         if(feature.shape[0] != self.window_size):
                             print(cell_type, chrom, start,
