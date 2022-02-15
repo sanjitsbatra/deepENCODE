@@ -15,15 +15,15 @@ from random import randrange
 import pyranges as pr
 
 
-CELL_TYPES = ["T13"] #  "T01", "T02", "T05", "T06", "T07", "T13"]
-# ["T" + "{0:0=2d}".format(i) for i in range(13, 14)]
-ASSAY_TYPES = ["A" + "{0:0=2d}".format(i) for i in range(1, 11)]
-ACTIVE_ASSAY_TYPES = ["A" + "{0:0=2d}".format(i) for i in range(1, 11)]
+CELL_TYPES = ["T" + "{0:0=2d}".format(i) for i in range(1, 14)]
+ASSAY_TYPES = ["A" + "{0:0=2d}".format(i) for i in range(1, 8)] + ["A10"]
+ACTIVE_ASSAY_TYPES = ["A" + "{0:0=2d}".format(i) for i in range(1, 8)]
+ACTIVE_ASSAY_TYPES = ACTIVE_ASSAY_TYPES + ["A10"]
 
 training_chroms = ["chr"+str(i) for i in range(1, 23, 1)] + ["chrX"]
 # [1, 3, 4, 5, 7, 13, 15, 19, 21]]
 validation_chroms = ["chr"+str(i) for i in range(8, 9, 2)]
-testing_chroms = ["chr"+str(i) for i in [2, 9]]
+testing_chroms = ["chr"+str(i) for i in [2, 9, 17]]
 
 DEBUG = False
 PRINT_FEATURES = True
