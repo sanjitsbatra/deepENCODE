@@ -1,7 +1,6 @@
 # This script loads epigenetic data into memory
 # It does this for multiple ChIP-seq assays
-# and also for DNA Methylation (?)
-# It then also loads genome-wide RNA-seq data binned at 100bp resolution
+# It then also loads genome-wide RNA-seq data binned at 25bp resolution
 # It does so for multiple cell types
 # It then creates a generator
 # which contains a masking function for the epigenetic data
@@ -16,17 +15,15 @@ import pyranges as pr
 
 
 CELL_TYPES = ["T" + "{0:0=2d}".format(i) for i in range(1, 14)]
-ASSAY_TYPES = ["A" + "{0:0=2d}".format(i) for i in range(1, 8)] + ["A10"]
-ACTIVE_ASSAY_TYPES = ["A" + "{0:0=2d}".format(i) for i in range(1, 8)]
-ACTIVE_ASSAY_TYPES = ACTIVE_ASSAY_TYPES + ["A10"]
+ASSAY_TYPES = ["A" + "{0:0=2d}".format(i) for i in range(2, 8)]
+ACTIVE_ASSAY_TYPES = ["A" + "{0:0=2d}".format(i) for i in range(2, 8)]
 
-training_chroms = ["chr"+str(i) for i in range(1, 23, 1)] + ["chrX"]
-# [1, 3, 4, 5, 7, 13, 15, 19, 21]]
-validation_chroms = ["chr"+str(i) for i in range(8, 9, 2)]
-testing_chroms = ["chr"+str(i) for i in [2, 9, 17]]
+training_chroms = ["chr"+str(i) for i in range(21, 22, 2)] #  + ["chrX"]
+validation_chroms = ["chr"+str(i) for i in range(22, 23, 2)]
+testing_chroms = ["chr"+str(i) for i in range(19, 20, 2)]
 
 DEBUG = False
-PRINT_FEATURES = True
+PRINT_FEATURES = False
 
 EPS = 0.000001
 
@@ -36,27 +33,20 @@ RESOLUTION = 25
 
 EDGE_CUSHION = 1000  # corresponds to 100Kb from the edge of chromosomes
 
-if(RESOLUTION == 100):
-    DATA_FOLDER = '../Data/100bp_Data'
-    TRANSCRIPTOME_DATA_FOLDER = "/scratch/sanjit/ENCODE_Imputation_Challenge" \
-                                "/2_April_2020/Data/Gene_Expression/" \
-                                "100bp_genome_wide_TPM_npy"
-elif(RESOLUTION == 25):
-    DATA_FOLDER = '../Data/Transformed_25bp_Data'
-    TRANSCRIPTOME_DATA_FOLDER = "/scratch/sanjit/ENCODE_Imputation_Challenge" \
-                                "/2_April_2020/Data/Gene_Expression/" \
+if(RESOLUTION == 25):
+    DATA_FOLDER = '../../Data/Transformed_25bp_Data'
+    TRANSCRIPTOME_DATA_FOLDER = "../../Data/Gene_Expression_Data/" \
                                 "25bp_genome_wide_TPM_npy"
 else:
-    print("RESOLUTION has to be 25bp or 100bp!")
+    print("RESOLUTION has to be 25bp!")
     sys.exit(-2)
 
-TSS_DATA = "/scratch/sanjit/ENCODE_Imputation_Challenge/" \
-           "2_April_2020/Data/Gene_Expression/" \
+TSS_DATA = "../../Data/Gene_Expression_Data/" \
            "T01.tsv.TPM.headered"
 
 # We don't want to train in regions that are Blacklisted or have Gaps
-Blacklisted_Regions = pr.read_bed('../Data/hg38.Blacklisted.bed', as_df=False)
-Gap_Regions = pr.read_bed('../Data/hg38.Gaps.bed', as_df=False)
+# Blacklisted_Regions = pr.read_bed('../Data/hg38.Blacklisted.bed', as_df=False)
+# Gap_Regions = pr.read_bed('../Data/hg38.Gaps.bed', as_df=False)
 
 if(PRINT_FEATURES):
     f_output = open("../Data/Training_Data.csv", 'a')
@@ -104,7 +94,7 @@ def create_masked(y, p):
 class EpigenomeGenerator(Sequence):
 
     def __init__(self, window_size, batch_size,
-                 shuffle=True, mode='', masking_probability=0.2):
+                 shuffle=True, mode='', masking_probability=0.0):
 
         self.window_size = window_size
         self.batch_size = batch_size
@@ -117,32 +107,49 @@ class EpigenomeGenerator(Sequence):
         self.transcriptome_pos = {}
         self.transcriptome_neg = {}
 
-        # Load TSS data
-        self.TSS = []
-
-        # Load TSS data
-        if(not(isfile(TSS_DATA))):
-            print(TSS_DATA, "doesn't exist!", file=sys.stderr)
-        f_TSS = open(TSS_DATA, 'r')
-        print("Loading TSS data", file=sys.stderr)
-        for line in f_TSS:
-            vec = line.rstrip("\n").split("\t")
-            TSS_strand = vec[3]
-            if(TSS_strand == "+"):
-                self.TSS.append([vec[0], vec[1], "+"])
-            elif(TSS_strand == "-"):
-                self.TSS.append([vec[0], vec[2], "-"])
-            else:
-                print("TSS strand information is invalid",
-                      file=sys.stderr)
-                continue
-
         if("training" in self.mode):
             self.chroms = training_chroms
         elif("validation" in self.mode):
             self.chroms = validation_chroms
         elif("testing" in self.mode):
             self.chroms = testing_chroms
+
+        # Load TSS data
+        self.TSS = []
+
+        # Load TSS data
+        if(not(isfile(TSS_DATA))):
+            print(TSS_DATA, "doesn't exist!", file=sys.stderr)
+
+        f_TSS = open(TSS_DATA, 'r')
+        print("Loading TSS data", file=sys.stderr)
+
+        line_number = 0
+        for line in f_TSS:
+            line_number += 1
+            vec = line.rstrip("\n").split("\t")
+            chrom = vec[0]
+            TSS_strand = vec[3]
+
+            # Load TSS data only corresponding to the mode's chromosomes
+            if(chrom not in self.chroms):
+                continue
+
+            if(TSS_strand == "+"):
+                for cell_type in CELL_TYPES: 
+                    self.TSS.append([chrom, vec[1], "+", cell_type])
+            elif(TSS_strand == "-"):
+                for cell_type in CELL_TYPES:
+                    self.TSS.append([chrom, vec[2], "-", cell_type])
+            else:
+                if(line_number > 1):
+                    print("TSS strand information is invalid",
+                          file=sys.stderr)
+                else:
+                    print("Parsing TSS file header",
+                          file=sys.stderr)
+                continue
+
 
         for chrom in self.chroms:
             for cell_type in CELL_TYPES:
@@ -272,6 +279,8 @@ class EpigenomeGenerator(Sequence):
                 #           file=sys.stderr)
                 # continue
             else:
+
+                # Define generator for MLM
                 if(("training" in self.mode) or ("validation" in self.mode)):
                     # Randomly sample a cell type
                     random_cell_type_index = randrange(len(CELL_TYPES))
@@ -312,13 +321,9 @@ class TranscriptomeGenerator(EpigenomeGenerator):
 
         self.window_size = window_size
         self.batch_size = batch_size
+        self.shuffle = shuffle
         self.mode = mode
         self.masking_probability = masking_probability
-
-        if("generate_dataframe" in self.mode):
-            self.shuffle = False
-        else:
-            self.shuffle = shuffle
 
         EpigenomeGenerator.__init__(self,
                                     self.window_size,
@@ -326,14 +331,30 @@ class TranscriptomeGenerator(EpigenomeGenerator):
                                     self.shuffle,
                                     self.mode,
                                     self.masking_probability)
+        
+        self.idxs = np.arange(len(self.TSS))
+    
+    def __len__(self):
+
+        if self.shuffle:
+            np.random.shuffle(self.idxs)
+
+        return len(self.idxs) // self.batch_size
+
 
     def __getitem__(self, batch_number):
+
+        if(DEBUG):
+            print("Batch number is", batch_number, 
+                  "for mode:", self.mode, 
+                  file=sys.stderr)
 
         X = np.zeros((self.batch_size, self.window_size, len(ASSAY_TYPES)))
         Y = np.zeros((self.batch_size, 1))
 
-        number_of_data_points = self.batch_size
-        while(number_of_data_points > 0):
+        number_of_data_points = 0
+        while(number_of_data_points < self.batch_size):
+
             if("genome_wide" in self.mode):
                 genome_wide = True
             else:
@@ -343,7 +364,9 @@ class TranscriptomeGenerator(EpigenomeGenerator):
             # we want each batch to have atleast 20% TSS training
             random_number = randrange(self.batch_size)
             if((random_number > int(self.batch_size/5))
-               and (genome_wide)):
+               and (genome_wide)
+               and ('training' in self.mode)):
+
                 random_idx = randrange(self.tot_len_list[-1])
                 idx = self.idxs[random_idx]
                 chrom, start = self.idx_to_chrom_and_start(idx)
@@ -353,42 +376,89 @@ class TranscriptomeGenerator(EpigenomeGenerator):
                     strand = "+"
                 else:
                     strand = "-"
-            elif("generate_dataframe" in self.mode):
-                TSS_idx = (batch_number * self.batch_size)
-                TSS_idx += number_of_data_points
+
+            elif(("training" in self.mode) or
+                 ("validation" in self.mode) or
+                 ("testing" in self.mode)):
+
+                # First obtain an index into a gene's TSS
+                TSS_idx = self.idxs[batch_number * self.batch_size + 
+                                   number_of_data_points]
+
+                # What happens when we're out of TSSs?                
                 if(TSS_idx >= len(self.TSS)):
-                    print("We have parsed all genes", file=sys.stderr)
+
+                    print("We have parsed all", batch_number, TSS_idx,
+                          len(self.TSS), "genes", file=sys.stderr)
                     os._exit(1)
+                
+                chrom, start, strand, cell_type = self.TSS[TSS_idx]
+
                 if(DEBUG):
-                    print("Dataframe: ", batch_number, number_of_data_points,
-                          TSS_idx, file=sys.stderr)
-                chrom, start, strand = self.TSS[TSS_idx]
-                start = int(int(start)/RESOLUTION)
-            else:
-                random_idx = randrange(len(self.TSS))
-                chrom, start, strand = self.TSS[random_idx]
+
+                    print("batch_number =", batch_number,
+                          "number_of_data_points =", number_of_data_points,
+                          "TSS_idx =", TSS_idx,
+                          "chrom =", chrom,
+                          "start =", start,
+                          "strand =", strand,
+                          "cell type=", cell_type,
+                          file=sys.stderr)
+
                 start = int(int(start)/RESOLUTION)
 
+            else:
+
+                print("Mode is incorrect", file=sys.stderr)
+                os._exit(-1)
+                # random_idx = randrange(len(self.TSS))
+                # chrom, start, strand = self.TSS[random_idx]
+                # start = int(int(start)/RESOLUTION)
+            
+            # Skip chromosomes that don't correspond to this mode
             if("training" in self.mode):
+
                 if(chrom not in training_chroms):
+
+                    if(DEBUG):
+
+                        print("Skipping chrom =", chrom,
+                              "not in training chromosomes", file=sys.stderr)
                     continue
+
             elif("validation" in self.mode):
+
                 if(chrom not in validation_chroms):
+
+                    if(DEBUG):
+
+                        print("Skipping chrom =", chrom,
+                              "not in validation chromosomes", file=sys.stderr)
                     continue
+
             elif("testing" in self.mode):
+
                 if(chrom not in testing_chroms):
+
+                    if(DEBUG):
+
+                        print("Skipping chrom =", chrom,
+                              "not in testing chromosomes", file=sys.stderr)
                     continue
 
             end = start + self.window_size
 
             if(DEBUG):
+
                 print("Batch Number", batch_number, chrom, start, end,
                       file=sys.stderr)
 
             if((start < EDGE_CUSHION) or
                (end > self.chrom_lens[chrom] - EDGE_CUSHION)):
+
                 # We are too close to the edges of the chromosome
                 if(DEBUG):
+
                     print("We are too close to the edge!",
                           batch_number, idx, chrom, start,
                           end, self.chrom_lens[chrom],
@@ -407,11 +477,6 @@ class TranscriptomeGenerator(EpigenomeGenerator):
                 #           file=sys.stderr)
                 # continue
             else:
-                if("generate_dataframe" in self.mode):
-                    cell_type = self.mode[-3:]
-                else:
-                    cell_type_index = randrange(len(CELL_TYPES))
-                    cell_type = CELL_TYPES[cell_type_index]
 
                 if(DEBUG):
                     print(self.epigenome[chrom][cell_type].shape, start,
@@ -426,14 +491,17 @@ class TranscriptomeGenerator(EpigenomeGenerator):
                 if(True):
 
                     if(DEBUG):
+
                         print(self.transcriptome_pos[chrom][cell_type].shape,
                               start, file=sys.stderr)
 
                     if(strand == "+"):
+
                         y = (self.transcriptome_pos[chrom]
                                                    [cell_type]
                                                    [start])
                     else:
+
                         x = x[::-1, :]
                         y = (self.transcriptome_neg[chrom]
                                                    [cell_type]
@@ -443,13 +511,17 @@ class TranscriptomeGenerator(EpigenomeGenerator):
                 # We lose ~1k genes because TSSs lie within RESOLUTION
                 # For those, print out exact TSS in addition to binned TSS
                 if(PRINT_FEATURES):
-                    for assay_index in range(1, 11):
-                        feature = x[:, assay_index-1]
+
+                    for assay_index in range(2, 8):
+                        feature = x[:, assay_index-2]
+
                         if(feature.shape[0] != self.window_size):
+
                             print(cell_type, chrom, start,
                                   strand, assay_index, feature.shape, feature,
                                   file=sys.stderr)
                             sys.exit(-3)
+
                         output_string = np.array2string(feature,
                                                         separator=',')
                         output_string = output_string.lstrip('[').rstrip(']')
@@ -457,24 +529,20 @@ class TranscriptomeGenerator(EpigenomeGenerator):
                         output_string = output_string.replace(', ', ',')
                         output_string = output_string.replace(' ,', ',')
                         output_list = output_string.split(",")
+
                         if(len(output_list) != self.window_size):
+
                             print(output_list, output_string,
                                   file=sys.stderr)
+
                         print(output_string, y, cell_type, chrom, start,
                               strand, assay_index, sep=',', file=f_output)
 
-                '''
-                # TSS only: train only on points that are greater than 0
-                if((genome_wide is False) and
-                   (abs(y) < EPS) and
-                   ("training" in self.mode)):
-                    continue
-                '''
 
-                X[number_of_data_points-1] = x
-                Y[number_of_data_points-1] = y
+                X[number_of_data_points, :, :] = x
+                Y[number_of_data_points, :] = y
 
-                number_of_data_points -= 1
+                number_of_data_points += 1
 
         return X, Y
 

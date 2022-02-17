@@ -1,7 +1,8 @@
 import sys
 import os
+import argparse
 from chrmt_generator import EpigenomeGenerator, TranscriptomeGenerator
-from chrmt_generator import ASSAY_TYPES, MASK_VALUE, EPS
+from chrmt_generator import ASSAY_TYPES, CELL_TYPES, MASK_VALUE, EPS
 from tensorflow.keras.callbacks import LearningRateScheduler
 from tensorflow.keras.models import Model
 from tensorflow.keras.layers import BatchNormalization, Activation
@@ -10,8 +11,7 @@ from tensorflow.keras.layers import Cropping1D
 # from tensorflow.keras.layers import Flatten, Dense
 # from keras.losses import logcosh
 from tensorflow.keras.optimizers import Adam
-from tensorflow.keras.callbacks import ModelCheckpoint
-# import tensorflow as tf
+from keras.callbacks import ModelCheckpoint, LearningRateScheduler, CSVLogger
 from keras import backend as K
 from tqdm.keras import TqdmCallback
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
@@ -173,30 +173,50 @@ def create_transcriptome_cnn(number_of_assays,
 
 if __name__ == '__main__':
 
-    run_name_prefix = sys.argv[1]
-    framework = sys.argv[2]  # epigenome or transcriptome
-    window_size = int(sys.argv[3])  # => Length of window / RESOLUTION bp
-    batch_size = int(sys.argv[4])
-    num_filters = int(sys.argv[5])
-    conv_kernel_size = 11
-    num_convolutions = int(sys.argv[6])
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--run_name')
+    parser.add_argument('--framework')
+    parser.add_argument('--window_size', type=int)
+    parser.add_argument('--num_layers', type=int)
+    parser.add_argument('--num_filters', type=int)
+    args = parser.parse_args()
+
+    run_name_prefix = args.run_name
+    framework = args.framework 
+    assert( (framework == "epigenome") or (framework == "transcriptome") )
+
+    window_size = args.window_size  # => Length of window / RESOLUTION bp
+    num_layers = args.num_layers
+    num_filters = args.num_filters
+
+    batch_size = 64
+    conv_kernel_size = 5
+    masking_prob = 0.0
     padding = 'same'
-    masking_prob = float(sys.argv[7])
-    loss = sys.argv[8]
+
+    loss = 'mse'
     if(((loss == 'mse') or (loss == 'mle')) is False):
+
         print("Loss should be mse or mle", file=sys.stderr)
         sys.exit(-1)
-    genome_wide_flag = sys.argv[9]
+    else:
+        assert(loss == 'mse')
 
     epochs = 100
-    if("generate_dataframe" in genome_wide_flag):
-        steps_per_epoch = 100000
-    else:
-        steps_per_epoch = 100
+    generate_dataframe = False
+    if(generate_dataframe):
 
-    run_name = (run_name_prefix + "_" + framework + "_" + str(window_size) +
-                "_" + str(num_filters) + "_" + str(num_convolutions) +
-                "_" + str(masking_prob) + "_" + loss + "_" + genome_wide_flag)
+        steps_per_epoch = 100000
+
+    else:
+
+        steps_per_epoch = 10
+
+    genome_wide = int(False)
+
+    run_name = (run_name_prefix + "_" + framework + "_" + str(genome_wide) + 
+                "_" + str(window_size) + str(num_layers) +
+                "_" + str(num_filters))
 
     # tf.disable_v2_behavior()
     # tf.compat.v1.keras.backend.get_session()
@@ -211,25 +231,24 @@ if __name__ == '__main__':
                                      window_size,
                                      num_filters,
                                      conv_kernel_size,
-                                     num_convolutions,
+                                     num_layers,
                                      'same')
     elif(framework == "transcriptome"):
 
         if(loss == 'mse'):
+
             loss_function = 'mean_squared_error'
             number_of_outputs = 1
+
         elif(loss == 'mle'):
+
             loss_function = maximum_likelihood_loss
             number_of_outputs = 2
+
         DataGenerator = TranscriptomeGenerator
-        model = create_transcriptome_cnn(len(ASSAY_TYPES),
-                                         window_size,
-                                         num_filters,
-                                         conv_kernel_size,
-                                         num_convolutions,
-                                         'same',
-                                         number_of_outputs)
+
     else:
+
         print("Invalid framework. Should be epigenome or transcriptome",
               file=sys.stderr)
         sys.exit(-2)
@@ -237,19 +256,20 @@ if __name__ == '__main__':
     training_generator = DataGenerator(window_size,
                                        batch_size,
                                        shuffle=True,
-                                       mode="training" + genome_wide_flag,
+                                       mode="training",
                                        masking_probability=masking_prob)
 
     validation_generator = DataGenerator(window_size,
                                          batch_size,
-                                         shuffle=True,
-                                         mode="validation" + genome_wide_flag,
+                                         shuffle=False,
+                                         mode="validation",
                                          masking_probability=masking_prob)
 
-    checkpoint = ModelCheckpoint(run_name+"."+"model-{epoch:02d}.hdf5",
-                                 verbose=0, save_best_only=False)
-
-    lr_schedule = LearningRateScheduler(lr_scheduler)
+    testing_generator = DataGenerator(window_size,
+                                      batch_size,
+                                      shuffle=False,
+                                      mode="testing",
+                                      masking_probability=masking_prob)
 
     tqdm_keras = TqdmCallback(verbose=0)
     setattr(tqdm_keras, 'on_train_batch_begin', lambda x, y: None)
@@ -259,20 +279,46 @@ if __name__ == '__main__':
     setattr(tqdm_keras, 'on_test_batch_begin', lambda x, y: None)
     setattr(tqdm_keras, 'on_test_batch_end', lambda x, y: None)
 
+    checkpoint = ModelCheckpoint("../../Models" + run_name + "-" +
+                                 "{epoch:03d}" + ".hdf5",
+                                 verbose=0, save_best_only=True)
+
+    lr_schedule = LearningRateScheduler(lr_scheduler)
+
+    csv_logger = CSVLogger('../../Logs/' + run_name + '.csv', append=True)
+
+    # model = return_wavenet_model(args.model, args.window_size, 1)
+    model = create_transcriptome_cnn(len(ASSAY_TYPES),
+                                     window_size,
+                                     num_filters,
+                                     conv_kernel_size,
+                                     num_layers,
+                                     'same',
+                                     number_of_outputs)
+
     model.compile(loss=loss_function,
-                  optimizer=Adam(),
+                  optimizer='adam',
                   run_eagerly=False)
 
     print(model.summary())
 
-    model.fit(x=training_generator,
-              epochs=epochs,
-              verbose=0,
-              callbacks=[checkpoint, lr_schedule, tqdm_keras],
-              validation_data=validation_generator,
-              validation_steps=steps_per_epoch,
-              steps_per_epoch=steps_per_epoch,
-              max_queue_size=0,
-              workers=0)
+    training_generator_len = len(list(training_generator))
+    validation_generator_len = len(list(validation_generator))
+
+    print("Dataset sizes: Training", training_generator_len,
+          "Validation: ", validation_generator_len, file=sys.stderr)
+
+    model.fit_generator(training_generator,
+                        epochs=epochs,
+                        steps_per_epoch=training_generator_len,
+                        validation_data=validation_generator,
+                        validation_steps=validation_generator_len,
+                        callbacks=[checkpoint, lr_schedule, csv_logger],
+                        workers=0,
+                        max_queue_size=0,
+                        use_multiprocessing=False,
+                        verbose=1)
+
+    # clean_up_models('../Models/' + run_name, epochs)
 
     os._exit(1)
