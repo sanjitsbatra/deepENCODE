@@ -1,5 +1,6 @@
 import sys
 import os
+import numpy as np
 import argparse
 from chrmt_generator import EpigenomeGenerator, TranscriptomeGenerator
 from chrmt_generator import ASSAY_TYPES, CELL_TYPES, MASK_VALUE, EPS
@@ -8,6 +9,7 @@ from tensorflow.keras.models import Model
 from tensorflow.keras.layers import BatchNormalization, Activation
 from tensorflow.keras.layers import Conv1D, Input, add
 from tensorflow.keras.layers import Cropping1D
+from keras.models import load_model
 # from tensorflow.keras.layers import Flatten, Dense
 # from keras.losses import logcosh
 from tensorflow.keras.optimizers import Adam
@@ -25,6 +27,16 @@ def lr_scheduler(epoch):
         return 1e-3
     else:
         return 5e-4
+
+
+def clean_up_models(prefix, max_epoch_num):
+    '''Deletes suboptimal models and removes epoch number from the best model'''
+    for c in np.arange(1, max_epoch_num+1):
+        try:
+            os.rename(prefix+'-'+'{:03d}'.format(c)+'.hdf5', prefix+'.hdf5')
+        except:
+            continue
+    return 0
 
 
 # Compute a loss that incorporates both mean and variance
@@ -186,6 +198,7 @@ if __name__ == '__main__':
     assert( (framework == "epigenome") or (framework == "transcriptome") )
 
     window_size = args.window_size  # => Length of window / RESOLUTION bp
+    assert((window_size % 2) == 1)
     num_layers = args.num_layers
     num_filters = args.num_filters
 
@@ -202,20 +215,13 @@ if __name__ == '__main__':
     else:
         assert(loss == 'mse')
 
-    epochs = 100
+    number_of_epochs = 10
     generate_dataframe = False
-    if(generate_dataframe):
-
-        steps_per_epoch = 100000
-
-    else:
-
-        steps_per_epoch = 10
 
     genome_wide = int(False)
 
     run_name = (run_name_prefix + "_" + framework + "_" + str(genome_wide) + 
-                "_" + str(window_size) + str(num_layers) +
+                "_" + str(window_size) + "_" + str(num_layers) +
                 "_" + str(num_filters))
 
     # tf.disable_v2_behavior()
@@ -279,7 +285,7 @@ if __name__ == '__main__':
     setattr(tqdm_keras, 'on_test_batch_begin', lambda x, y: None)
     setattr(tqdm_keras, 'on_test_batch_end', lambda x, y: None)
 
-    checkpoint = ModelCheckpoint("../../Models" + run_name + "-" +
+    checkpoint = ModelCheckpoint("../../Models/" + run_name + "-" +
                                  "{epoch:03d}" + ".hdf5",
                                  verbose=0, save_best_only=True)
 
@@ -287,7 +293,6 @@ if __name__ == '__main__':
 
     csv_logger = CSVLogger('../../Logs/' + run_name + '.csv', append=True)
 
-    # model = return_wavenet_model(args.model, args.window_size, 1)
     model = create_transcriptome_cnn(len(ASSAY_TYPES),
                                      window_size,
                                      num_filters,
@@ -302,23 +307,57 @@ if __name__ == '__main__':
 
     print(model.summary())
 
-    training_generator_len = len(list(training_generator))
-    validation_generator_len = len(list(validation_generator))
+    # training_generator_len = len(list(training_generator))
+    # validation_generator_len = len(list(validation_generator))
 
-    print("Dataset sizes: Training", training_generator_len,
-          "Validation: ", validation_generator_len, file=sys.stderr)
+    # print("Dataset sizes: Training", training_generator_len,
+    #       "Validation: ", validation_generator_len, file=sys.stderr)
 
-    model.fit_generator(training_generator,
-                        epochs=epochs,
-                        steps_per_epoch=training_generator_len,
+    model.fit(training_generator,
+                        epochs=number_of_epochs,
                         validation_data=validation_generator,
-                        validation_steps=validation_generator_len,
                         callbacks=[checkpoint, lr_schedule, csv_logger],
                         workers=0,
                         max_queue_size=0,
                         use_multiprocessing=False,
                         verbose=1)
 
-    # clean_up_models('../Models/' + run_name, epochs)
+    # Once the models have been trained, obtain a single best model
+    clean_up_models('../../Models/' + run_name, number_of_epochs)
+
+    # Once we have finished training the model
+    # we want to compute to key sets of metrics
+    # the first is the correlation of predictions across genes, for each cell type
+    # the second is the correlation across cell types, for each gene
+    # these two metrics then need to be summarized as figures, for each model
+    trained_model = load_model('../../Models/' + run_name + '.hdf5')
+
+    testing_generator_len = len(list(testing_generator))
+    
+    True_Expression = np.zeros((batch_size * testing_generator_len, 1))
+    Predicted_Expression = np.zeros((batch_size * testing_generator_len, 1))
+    metadata_list = []
+
+    for test_i in range(testing_generator_len):
+
+        x, yTrue, metadata = testing_generator.__getitem__(test_i)
+        True_Expression[test_i * batch_size:(test_i + 1) * batch_size] = yTrue
+        yPred = np.squeeze(trained_model.predict(x), axis=2)
+        Predicted_Expression[test_i * batch_size:
+                             (test_i + 1) * batch_size] = yPred
+        metadata_list.append(metadata)
+    metadata_list = np.reshape(np.asarray(metadata_list), (-1, 5))
+
+    f_output = open('../../Logs/' + run_name + '.testing_metrics.tsv', 'a')
+    for i in range(True_Expression.shape[0]):
+        print(str(metadata_list[i, 0]) + "\t" +
+              str(metadata_list[i, 1]) + "\t" +
+              str(metadata_list[i, 2]) + "\t" +
+              str(metadata_list[i, 3]) + "\t" +
+              str(metadata_list[i, 4]) + "\t" +
+              str(True_Expression[i, 0]) + "\t" +
+              str(Predicted_Expression[i, 0]),
+              file=f_output) 
+    f_output.close()
 
     os._exit(1)

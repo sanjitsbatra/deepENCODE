@@ -18,9 +18,9 @@ CELL_TYPES = ["T" + "{0:0=2d}".format(i) for i in range(1, 14)]
 ASSAY_TYPES = ["A" + "{0:0=2d}".format(i) for i in range(2, 8)]
 ACTIVE_ASSAY_TYPES = ["A" + "{0:0=2d}".format(i) for i in range(2, 8)]
 
-training_chroms = ["chr"+str(i) for i in range(21, 22, 2)] #  + ["chrX"]
-validation_chroms = ["chr"+str(i) for i in range(22, 23, 2)]
-testing_chroms = ["chr"+str(i) for i in range(19, 20, 2)]
+training_chroms = ["chr"+str(i) for i in range(22, 23, 2)]
+validation_chroms = ["chr"+str(i) for i in range(21, 23, 2)]
+testing_chroms = ["chr"+str(i) for i in range(21, 23, 2)]
 
 DEBUG = False
 PRINT_FEATURES = False
@@ -130,6 +130,7 @@ class EpigenomeGenerator(Sequence):
             vec = line.rstrip("\n").split("\t")
             chrom = vec[0]
             TSS_strand = vec[3]
+            transcript = vec[4]
 
             # Load TSS data only corresponding to the mode's chromosomes
             if(chrom not in self.chroms):
@@ -137,10 +138,10 @@ class EpigenomeGenerator(Sequence):
 
             if(TSS_strand == "+"):
                 for cell_type in CELL_TYPES: 
-                    self.TSS.append([chrom, vec[1], "+", cell_type])
+                    self.TSS.append([chrom, vec[1], "+", cell_type, transcript])
             elif(TSS_strand == "-"):
                 for cell_type in CELL_TYPES:
-                    self.TSS.append([chrom, vec[2], "-", cell_type])
+                    self.TSS.append([chrom, vec[2], "-", cell_type, transcript])
             else:
                 if(line_number > 1):
                     print("TSS strand information is invalid",
@@ -351,6 +352,7 @@ class TranscriptomeGenerator(EpigenomeGenerator):
 
         X = np.zeros((self.batch_size, self.window_size, len(ASSAY_TYPES)))
         Y = np.zeros((self.batch_size, 1))
+        metadata = []
 
         number_of_data_points = 0
         while(number_of_data_points < self.batch_size):
@@ -388,11 +390,14 @@ class TranscriptomeGenerator(EpigenomeGenerator):
                 # What happens when we're out of TSSs?                
                 if(TSS_idx >= len(self.TSS)):
 
-                    print("We have parsed all", batch_number, TSS_idx,
+                    print("TSS_idx shouldn't be larger than #genes",
+                          batch_number, TSS_idx,
                           len(self.TSS), "genes", file=sys.stderr)
                     os._exit(1)
                 
-                chrom, start, strand, cell_type = self.TSS[TSS_idx]
+                chrom, start, strand, cell_type, transcript = self.TSS[TSS_idx]
+
+                metadata.append([chrom, start, strand, cell_type, transcript])
 
                 if(DEBUG):
 
@@ -538,15 +543,20 @@ class TranscriptomeGenerator(EpigenomeGenerator):
                         print(output_string, y, cell_type, chrom, start,
                               strand, assay_index, sep=',', file=f_output)
 
-
                 X[number_of_data_points, :, :] = x
                 Y[number_of_data_points, :] = y
 
                 number_of_data_points += 1
 
-        return X, Y
+        if( ("training" in self.mode) or ("validation" in self.mode) ):
+            return X, Y
+        elif("testing" in self.mode):
+            return X, Y, metadata
+        else:
+            return X, Y
 
 
+'''
 class TranscriptomePredictor(EpigenomeGenerator):
 
     def __init__(self, window_size, batch_size,
@@ -601,3 +611,4 @@ class TranscriptomePredictor(EpigenomeGenerator):
             Y[i-self.start] = y
 
         return X, Y
+'''
