@@ -2,6 +2,10 @@ import sys
 import os
 import numpy as np
 import argparse
+import matplotlib.pyplot as plt
+import seaborn as sns
+from tqdm import tqdm
+from scipy.stats import spearmanr, pearsonr
 from chrmt_generator import EpigenomeGenerator, TranscriptomeGenerator
 from chrmt_generator import ASSAY_TYPES, CELL_TYPES, MASK_VALUE, EPS
 from tensorflow.keras.callbacks import LearningRateScheduler
@@ -215,7 +219,7 @@ if __name__ == '__main__':
     else:
         assert(loss == 'mse')
 
-    number_of_epochs = 10
+    number_of_epochs = 100
     generate_dataframe = False
 
     genome_wide = int(False)
@@ -291,7 +295,7 @@ if __name__ == '__main__':
 
     lr_schedule = LearningRateScheduler(lr_scheduler)
 
-    csv_logger = CSVLogger('../../Logs/' + run_name + '.csv', append=True)
+    csv_logger = CSVLogger('../../Logs/' + run_name + '.csv', append=False)
 
     model = create_transcriptome_cnn(len(ASSAY_TYPES),
                                      window_size,
@@ -306,12 +310,6 @@ if __name__ == '__main__':
                   run_eagerly=False)
 
     print(model.summary())
-
-    # training_generator_len = len(list(training_generator))
-    # validation_generator_len = len(list(validation_generator))
-
-    # print("Dataset sizes: Training", training_generator_len,
-    #       "Validation: ", validation_generator_len, file=sys.stderr)
 
     model.fit(training_generator,
                         epochs=number_of_epochs,
@@ -348,7 +346,7 @@ if __name__ == '__main__':
         metadata_list.append(metadata)
     metadata_list = np.reshape(np.asarray(metadata_list), (-1, 5))
 
-    f_output = open('../../Logs/' + run_name + '.testing_metrics.tsv', 'a')
+    f_output = open('../../Logs/' + run_name + '.testing_metrics.tsv', 'w')
     for i in range(True_Expression.shape[0]):
         print(str(metadata_list[i, 0]) + "\t" +
               str(metadata_list[i, 1]) + "\t" +
@@ -359,5 +357,107 @@ if __name__ == '__main__':
               str(Predicted_Expression[i, 0]),
               file=f_output) 
     f_output.close()
+
+    # Now we create a visualization of the training loss, validation loss
+    fig, axs = plt.subplots(2, 2)
+    fig.set_size_inches(12, 12)
+        
+    epoch_number = []
+    training_loss = []
+    validation_loss = []
+    f_loss = open('../../Logs/' + run_name + '.csv', 'r')
+    line_number = 0
+    for line in f_loss:
+        line_number += 1
+        if(line_number == 1):
+            continue
+
+        vec = line.rstrip("\n").split(",")
+        epoch_number.append(int(vec[0]))
+        training_loss.append(float(vec[1]))
+        validation_loss.append(float(vec[3]))
+
+    axs[0, 0].plot(epoch_number, training_loss, 'o-', color="#4daf4a", markersize=4, linewidth=3, label="training_loss")
+    axs[0, 0].plot(epoch_number, validation_loss, 'o-', color="#8470FF", markersize=4, linewidth=3, label="validation_loss")
+
+    axs[0, 0].set_xlim(-1, max(epoch_number) + 1)
+    axs[0, 0].set_ylim(0, 1)
+    axs[0, 0].set_xlabel("Number of epochs")
+    axs[0, 0].set_ylabel("Loss")
+    axs[0, 0].legend(loc="upper center", fontsize=10, ncol=1)
+    axs[0, 0].set_title("Loss vs epoch")
+
+    # We also visualize the correlation across genes within each cell type
+    cell_type_spearman = {}
+    for cell_type in tqdm(CELL_TYPES):
+        f_predictions = open('../../Logs/' + run_name + '.testing_metrics.tsv', 'r')
+        yTrue = []
+        yPred = []
+        for line in f_predictions:
+            vec = line.rstrip("\n").split("\t")
+            if(vec[3]!=cell_type):
+                continue
+            else:
+                yTrue.append(float(vec[5]))
+                yPred.append(float(vec[6]))
+
+        sc, sp = spearmanr(yTrue, yPred)
+        cell_type_spearman[cell_type] = sc
+
+        f_predictions.close()
+
+        if(cell_type == "T13"):
+            axs[0, 1].plot(yTrue, yPred, 'o', markersize=5, color="#FF1493")
+            axs[0, 1].set_xlim(-1, 5)
+            axs[0, 1].set_ylim(-1, 5)
+            axs[0, 1].set_xlabel("True log10(TPM+1)")
+            axs[0, 1].set_ylabel("Predicted log10(TPM+1)")
+            axs[0, 1].set_title("HEK293T True vs Predicted gene expression")
+
+    axs[1, 0].bar(CELL_TYPES, [cell_type_spearman[ct] for ct in CELL_TYPES], color=plt.cm.plasma(np.linspace(0.1, 0.9, len(CELL_TYPES))))
+    axs[1, 0].set_title("Correlations across genes for different cell types")
+    axs[1, 0].set_ylim(0, 1)
+
+    # We then visualize the CDF of correlations across cell types for each gene
+    f_predictions = open('../../Logs/' + run_name + '.testing_metrics.tsv', 'r')
+    yTrue = {}
+    yPred = {}
+    for line in f_predictions:
+        vec = line.rstrip("\n").split("\t")
+        transcript = vec[4]
+        if(transcript in yTrue):
+            yTrue[transcript].append(float(vec[5]))
+            yPred[transcript].append(float(vec[6]))
+        else:
+            yTrue[transcript] = [float(vec[5])]
+            yPred[transcript] = [float(vec[6])]        
+
+    f_predictions.close()             
+    
+    spearman_list = []
+    CXCR4_spearman = -100
+    TGFBR1_spearman = -100
+    for transcript in yTrue:
+
+        yT = yTrue[transcript]
+        yP = yPred[transcript]
+        sc, sp = spearmanr(yT, yP)
+
+        spearman_list.append(sc)
+
+        if(transcript == "ENST00000241393.3"):
+            CXCR4_spearman = round(sc, 2)
+        elif(transcript == "ENST00000374994.8"):
+            TGFBR1_spearman = round(sc, 2)
+
+    sns.set_style('whitegrid')
+    sns.kdeplot(np.array(spearman_list), fill=True, alpha=0.5, linewidth=0.05, bw_adjust=0.2, color="#2ab0ff", ax=axs[1, 1])
+    axs[1, 1].set_xlim(-1.1, 1.1)
+    axs[1, 1].set_ylim(0, 2)
+    axs[1, 1].set_title("Spearman across cell types for genes\n"+
+                        "CXCR4 spearman = "+str(CXCR4_spearman)+
+                        " TGFBR1 spearman = "+str(TGFBR1_spearman))
+                        
+    fig.savefig("../../Results/" + run_name + ".testing.pdf")
 
     os._exit(1)

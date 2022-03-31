@@ -12,7 +12,7 @@ output_prefix = sys.argv[2]
 
 for chrom in ALLOWED_CHROMS:
 
-    start_t = time.clock()
+    start_t = time.perf_counter()
     # Perform nan to num after parsing bw file to remove nans before averaging
     v = np.nan_to_num( bw.values(chrom, 0, bw.chroms(chrom), numpy=True) )
 
@@ -34,4 +34,4 @@ for chrom in ALLOWED_CHROMS:
     np.save(output_prefix+"."+chrom+".npy", final_npy)
 
     print("Time taken for binning " + str(chrom) + " " +
-          str(time.clock() - start_t), file=sys.stderr)
+          str(time.perf_counter() - start_t), file=sys.stderr)

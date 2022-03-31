@@ -18,9 +18,10 @@ CELL_TYPES = ["T" + "{0:0=2d}".format(i) for i in range(1, 14)]
 ASSAY_TYPES = ["A" + "{0:0=2d}".format(i) for i in range(2, 8)]
 ACTIVE_ASSAY_TYPES = ["A" + "{0:0=2d}".format(i) for i in range(2, 8)]
 
-training_chroms = ["chr"+str(i) for i in range(22, 23, 2)]
-validation_chroms = ["chr"+str(i) for i in range(21, 23, 2)]
-testing_chroms = ["chr"+str(i) for i in range(21, 23, 2)]
+training_chroms = ["chr"+str(i) for i in range(1, 23, 2)]
+validation_chroms = ["chr"+str(i) for i in range(2, 23, 2)]
+testing_chroms = ["chr"+str(i) for i in range(2, 23, 2)]
+inference_chroms = ["chr"+str(i) for i in [2, 9]]
 
 DEBUG = False
 PRINT_FEATURES = False
@@ -113,6 +114,14 @@ class EpigenomeGenerator(Sequence):
             self.chroms = validation_chroms
         elif("testing" in self.mode):
             self.chroms = testing_chroms
+        elif("inference" in self.mode):
+            self.chroms = inference_chroms
+            global CELL_TYPES
+            global ASSAY_TYPES
+            global ACTIVE_ASSAY_TYPES
+            CELL_TYPES = ["T" + "{0:0=2d}".format(i) for i in range(13, 14)]
+            ASSAY_TYPES = ["A" + "{0:0=2d}".format(i) for i in range(2, 8)] + ["A10"]
+            ACTIVE_ASSAY_TYPES = ["A" + "{0:0=2d}".format(i) for i in range(2, 8)] + ["A10"]
 
         # Load TSS data
         self.TSS = []
@@ -556,22 +565,22 @@ class TranscriptomeGenerator(EpigenomeGenerator):
             return X, Y
 
 
-'''
 class TranscriptomePredictor(EpigenomeGenerator):
 
     def __init__(self, window_size, batch_size,
-                 shuffle=False, mode='', masking_probability=0.,
-                 cell_type=0, chrom="chr1", start=1, strand="+"):
+                 shuffle=False, mode='inference', masking_probability=0.,
+                 chrom="chr1", start=1, strand="+",
+                 cell_type=13-1):
 
         self.window_size = window_size
         self.batch_size = batch_size
         self.shuffle = shuffle
         self.mode = mode
         self.masking_probability = masking_probability
-        self.cell_type = cell_type
         self.chrom = chrom
-        self.start = start
+        self.start = start // RESOLUTION
         self.strand = strand
+        self.cell_type = cell_type
 
         EpigenomeGenerator.__init__(self, self.window_size, self.batch_size,
                                     self.shuffle, self.mode,
@@ -607,8 +616,7 @@ class TranscriptomePredictor(EpigenomeGenerator):
                                            [cell_type]
                                            [i])
 
-            X[i-self.start] = x
-            Y[i-self.start] = y
+            X[i-self.start, :, :] = x
+            Y[i-self.start, :] = y
 
         return X, Y
-'''

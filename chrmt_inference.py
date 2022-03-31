@@ -1,5 +1,11 @@
+import os
+import sys
+import seaborn as sns
 import numpy as np
 import pandas as pd
+from chrmt_generator import TranscriptomeGenerator, TranscriptomePredictor
+from chrmt_train import maximum_likelihood_loss
+from tensorflow.keras.models import load_model
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestRegressor
 from sklearn import linear_model
@@ -12,246 +18,175 @@ from matplotlib.ticker import MaxNLocator
 import random
 import itertools
 import warnings
-from tqdm import tqdm
 warnings.filterwarnings('ignore')
-
-from chrmt_generator import RESOLUTION
-
-Data_Path = "/scratch/sanjit/ENCODE_Imputation_Challenge/2_April_2020/Data/"
-
-window_size = 401
-operative_half_window_size = 100
-
-assay_names = ['DNase', 'H3K36me3', 'H3K27me3', 'H3K27ac',
-               'H3K4me1', 'H3K4me3', 'H3K9me3', 
-               'Methylation_pos', 'Methylation_neg']
-assay_colors = ['black', 'red', 'green', 'blue', 'cyan', 
-                'pink', 'brown', 'purple', 'darkpink']
+from chrmt_generator import RESOLUTION, EPS
+import argparse
+from tqdm import tqdm
 
 
-# Define in silico epi-mutagenesis
-def ise(original_gene_features,
-        trained_model,
-        inserted_lnp1_minuslog10p_value = 3,
-        inserted_peak_width = 2)
+# Perform in silico epi-mutagenesis
+def ise(trained_model, x, y, bin_wrt_tss, inserted_peak_width, inserted_lnp1_minuslog10_p_value):
 
-    # obtain the middle portion of this
-    X = original_gene_features[:, 
-                               (window_size // 2) -
-                               operative_half_window_size:
-                               (window_size // 2) +
-                               operative_half_window_size + 1,
-                               :]
-
-    # Perform inference by introducing p-value changes with a peak width
-    positions = range(operative_half_window_size - operative_half_window_size,
-                      operative_half_window_size + operative_half_window_size 
-                      + 1)
-    yPred = []
-    for pos in positions:
-        X_modified = np.copy(X)
-        for p in range(pos - inserted_peak_width // 2, 
-                       pos + inserted_peak_width // 2 + 1):
-            if( (p >= 0) and (p < max(positions)) ):
-                # NOTE: this is ln( -log10(transformed p-value) + 1)
-                if(X_modified[:, p, 2] > 10): 
-                    # If H3K27me3 peak exists, then p300 doesn't work
-                    print("H3K27me3 exists!")
-                    pass
-                else:
-                    # Modify the H3K27ac peak
-                    X_modified[:, p, 3] = max(X_modified[:, p, 3], 
-                                              inserted_lnp1_minuslog10p_value)
-
-
-        yPred_value = trained_model.predict(X_modified)[0]
-        yPred.append(yPred_value)
-
-    # Instead of scaling, divide by yPred
-    yPred_native = trained_model.predict(X)[0]
-    yPred_fold_change = (np.power(10, yPred) -1) /
-            (np.power(10, yPred_native + 0.000001) -1)
-
-    return yPred_fold_change
+    x_modified = np.copy(x)
+    for p in range(bin_wrt_tss - inserted_peak_width // 2, 
+                   bin_wrt_tss + inserted_peak_width // 2 + 1):
+        if( (p >= 0) and (p < x.shape[1]) ):
+            # Modify the H3K27ac peak NOTE: this is ln( -log10(transformed p-value) + 1)
+            x_modified[:, p, 3] += (x_modified[:, p, -1] * inserted_lnp1_minuslog10_p_value)
+   
+    yPred = trained_model.predict(x[:, :, :-1])[0][0][0]
+    yPred_perturbed = trained_model.predict(x_modified[:, :, :-1])[0][0][0]
+    
+    model_prediction_fold_change = (np.power(10, yPred_perturbed) - 1) / (np.power(10, yPred + EPS) - 1) 
+    
+    return model_prediction_fold_change
 
 
 # Transform p-value back from log-space
-def p_value_mapping(inserted_lnp1_minuslog10p_value):
-    minuslog10p_value = np.expm1(inserted_lnp1_minuslog10p_value)
-    p_value = np.power(10, -1 * minuslog10p_value)
-    return round(minuslog10p_value, 4)
+def p_value_mapping(inserted_lnp1_minuslog10_p_value):
+    minuslog10_p_value = np.expm1(inserted_lnp1_minuslog10_p_value)
+    p_value = np.power(10, -1 * minuslog10_p_value)
+    return round(minuslog10_p_value, 4)
 
 
-# Define axes math for creating matplotlib subplots
-def convert_to_2D(idx, nrows, ncols):
-    return idx//ncols, idx%ncols
+# Visualize true vs predicted fold change
+def visualize_fold_change(axis_dict, ise_results):
 
+    yTrue = {}
+    yPred = {}
+    gene_list = ['CXCR4', 'TGFBR1']    
+    for gene in gene_list:
+        yTrue[gene] = []
+        yPred[gene] = []
 
-# Visualize Alan's data with the model predictions
-def validate_model(trained_model,
-                   inserted_lnp1_minuslog10p_value,
-                   inserted_peak_width):
-
-    # Load p300 epigenome editing data
-    df_p300 = pd.read_csv(Data_Path +
-                          "p300_epigenome_editing_dataset.tsv",
-                          sep="\t")
-
-    TSS = {}
-    STRANDS = {}
-    CHROMS = {}
-    GENES = {}
-    for index in range(len(df_p300)):
-        tss = df_p300.iloc[index, 13]
-        gene_strand = df_p300.iloc[index, 3]
-        chrom = df_p300.iloc[index, 2]
-        gene = df_p300.iloc[index, 0]
-
-        TSS[gene] = int(tss)
-        if(gene_strand == "plus"):
-            STRANDS[gene] = "+"
-        elif(gene_strand == "minus"):
-            STRANDS[gene] = "-"
-        else:
-            print("something wrong with strand!")
-        CHROMS[gene] = chrom
-        GENES[gene] = 1
-
-    GENES_LIST = set(list(GENES.keys()))    
-
-    df_GENES_values = {}
-    df_GENES_means = {}
-    for gene in GENES_LIST:
-        df_GENES_values[gene] = df_p300[df_p300["p300 target gene"] == gene]
-        (df_GENES_values[gene]["Position_wrt_TSS"] = 
-        pd.to_numeric(df_GENES_values[gene]
-                                     ["gRNA position  wrt TSS (hg38)"],
-                                     errors='coerce')/RESOLUTION)
-
-        df_GENES_means[gene] = df_GENES_values[gene].
-                               groupby('Position_wrt_TSS').mean()
-        df_GENES_means[gene].index.name = 'Position_wrt_TSS'
-        df_GENES_means[gene].reset_index(inplace=True)
-
-    # Perform in-silico epi-mutagenesis
-    xticklabels = range(-operative_half_window_size, 
-                        operative_half_window_size + 1)
-
-    GENES_LIST = ["CXCR4", "TGFBR1"]
-
-    fig, axes = plt.subplots(nrows=len(GENES_LIST),
-                             ncols=2,
-                             figsize=(40, 30),
-                             sharey=False)
-
-    fig.tight_layout(pad=1, w_pad=20, h_pad=25)
-
-    for idx, gene in enumerate(sorted(GENES_LIST)):
-
-        idx_x, idx_y = convert_to_2D(idx, 
-                                     nrows=len(GENES_LIST),
-                                     ncols=1)
-        ax_1 = axes[idx_x, 0]
-        ax_2 = axes[idx_x, 1]
-
-        original_gene_features = np.load(Data_Path + gene + ".npy")
-        gene_features = np.squeeze(original_gene_features, axis=0)
-                        [(window_size // 2) - operative_half_window_size:
-                        (window_size // 2) +o perative_half_window_size+1, :]
-
-        df_values = df_GENES_values[gene]
-        df_means = df_GENES_means[gene]
-
-        gene_ise = ise(original_gene_features, 
-                       trained_model,
-                       inserted_lnp1_minuslog10p_value,
-                       inserted_peak_width)
-
-        # Create a scatter plot of the means vs predictions
-        gene_ise_at_means = []
-        alan_means = []
-        for p_idx in range(len(df_means)):
-            position_m = df_means.iloc[p_idx, 0]
-            alan_mean = df_means.iloc[p_idx, 1]
-            if(position_m + operative_half_window_size < 0):
-                continue
-            elif(position_m > operative_half_window_size):
-                continue
-            else:
-                gene_ise_at_means.append(gene_ise[int(position_m) +
-                                         operative_half_window_size])
-                alan_means.append(alan_mean)
-
-        pc, pp = pearsonr(list(alan_means), gene_ise_at_means)
-        sc, sp = spearmanr(list(alan_means), gene_ise_at_means)
-
-        ax_1.plot(list(alan_means), gene_ise_at_means,
-                  'o', markersize=30, color="#FF1493")
-        ax_1.set_xlim(-1, 1.1 * max(alan_means))
-        ax_1.set_ylim(-1, 1.1 * max(gene_ise_at_means))
-        ax_1.tick_params(axis='both', which='major', labelsize=40)
-        ax_1.tick_params(axis='both', which='minor', labelsize=40)
-        ax_1.set_xlabel("Mean experimental fold change", size=60)
-        ax_1.set_ylabel("Model prediction's fold change", size=45)
-        ax_1.set_title("Correlation between experimental and "+
-                       "model predictions fold change\nPearson = "+
-                       str(round(pc, 2))+
-                       " ("+str(round(pp, 3))+
-                       ") Spearman = "+
-                       str(round(sc, 2))+
-                       " ("+str(round(sp, 3))+
-                       ")", size=40)
-
-        epigenetic_features = gene_features[:, 3] # H3K27ac
-        color_for_assay = assay_color[3]
-        label_for_assay = assays[3]
-
-        # Scale the model predictions     
-        scaling_ratio = np.median(df_means['Measured fold change']) / 
-                                           np.median(gene_ise - 0.0)
-        scaled_model_predictions = (scaling_ratio * (gene_ise - 0.0)) + 0.0
-
-        # Scale the epigenetic features
-        epigenetic_scaling_ratio = max(df_means['Measured fold change']) /
-                                                max(epigenetic_features - 0.0)
-        scaled_epigenetic_features = (epigenetic_scaling_ratio * 
-                                      (epigenetic_features - 0.0)) + 0.0
-
-        ax_2.plot(xticklabels, scaled_model_predictions, 
-                  'o-', color="#4daf4a", linewidth=5, markersize=2, 
-                  label="(Scaled) Model Predictions " + label_for_assay)
-        ax_2.plot(xticklabels, scaled_epigenetic_features, 
-                  'o-', color="#8470FF", linewidth=5, markersize=1, 
-                  label="(Scaled) Epigenetic Features " + label_for_assay)
-
-        ax_2.bar(df_means['Position_wrt_TSS'], 
-                 0.0 + (df_means['Measured fold change']), 
-                 color="#f781bf", bottom=0, width=2, 
-                 label="Experimental mean from qPCR")
-        ax_2.plot(df_values['Position_wrt_TSS'], 
-                  0.0 + (df_values['Measured fold change']), 
-                  'o', color="#e41a1c", 
-                  label="Experimental data from qPCR", markersize=10)
-
-        ax_2.set_xlim(-operative_half_window_size-10,
-                      operative_half_window_size+10)
-        ax_2.set_ylim(-1, 1.0 + max(df_means['Measured fold change'])*1.5)
-        x_v = ax_2.get_xticks()
-        ax_2.set_xticklabels(['{:3.0f}'.format(x * RESOLUTION) for x in x_v])
-        ax_2.yaxis.set_major_locator(MaxNLocator(integer=True))
-        ax_2.tick_params(axis='both', which='major', labelsize=35)
-        ax_2.tick_params(axis='both', which='minor', labelsize=35)
-        ax_2.set_xlabel("Peak Position (in bp) w.r.t TSS", size=50)
-        ax_2.set_ylabel("Gene expression fold change", size=50)
-        ax_2.set_title(gene + " with H3K27ac + " +
-                       assay_names[assay_index-1] + "\nincreasing " +
-                       str(peak_width * RESOLUTION) + 
-                       "bp peaks by -log10(p_value)=" +
-                       str(p_value_mapping(inserted_lnp1_minuslog10p_value)),
-                       size=40) 
-
-        ax_2.legend(loc='upper center', prop={'size': 30}, ncol=2)
-
-    plt.show()
-    plt.close()
+    for e in ise_results:
+        
+        gene, peak_width, inserted_lnp1_minuslog10_p_value, bin_wrt_tss, CRISPRa_qPCR_fold_change, model_prediction_fold_change = e        
+                
+        yTrue[gene].append(CRISPRa_qPCR_fold_change)
+        yPred[gene].append(model_prediction_fold_change)
     
+    # Create a scatter plot of the means vs predictions
+    for gene in gene_list:    
+        pc, pp = pearsonr(yTrue[gene], yTrue[gene])
+        sc, sp = spearmanr(yTrue[gene], yPred[gene])
+
+        axis_dict[gene].plot(yTrue[gene], yPred[gene], 'o', markersize=30, color="#FF1493")
+        axis_dict[gene].set_xlim(-1, 10)
+        axis_dict[gene].set_ylim(-1, 10)
+        axis_dict[gene].tick_params(axis='both', which='major', labelsize=40)
+        axis_dict[gene].tick_params(axis='both', which='minor', labelsize=40)
+        axis_dict[gene].set_xlabel("CRISPRa qPCR fold change", size=60)
+        axis_dict[gene].set_ylabel("Model prediction's fold change", size=45)
+        axis_dict[gene].set_title("Gene: "+gene+
+                                  " peak_width = "+str(peak_width)+
+                                  " inserted -log10(p-value) = "+str(p_value_mapping(inserted_lnp1_minuslog10_p_value))+
+                                  "\nCorrelation between experimental and "+
+                                  "predicted fold change\nPearson = "+
+                                  str(round(pc, 2))+
+                                  " ("+str(round(pp, 3))+
+                                  ") Spearman = "+
+                                  str(round(sc, 2))+
+                                  " ("+str(round(sp, 3))+
+                                  ")", size=40)
+
+    return None
+
+
+if __name__ == '__main__': 
+   
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--run_name')
+    parser.add_argument('--trained_model')
+    parser.add_argument('--window_size', type=int)
+    args = parser.parse_args()
+
+    trained_model = load_model(args.trained_model)
+
+    # Generate data vectors for CXCR4 and TGFBR1
+    cell_type_choice = -1
+
+    CHROM = {'CXCR4':'chr2', 'TGFBR1':'chr9'}
+    TSS = {'CXCR4':136118149, 'TGFBR1':99105113}
+    STRAND = {'CXCR4':'-','TGFBR1':'+'}
+
+    xInference = {}
+    yInference = {}
+
+    gene_list = ["CXCR4", "TGFBR1"]
+    for gene in gene_list:
+        
+        prediction_generator = TranscriptomePredictor(args.window_size,
+                               1,
+                               shuffle=False,
+                               mode='inference',
+                               masking_probability=0.0,
+                               chrom=CHROM[gene], 
+                               start=int(TSS[gene]),
+                               strand=STRAND[gene],
+                               cell_type=cell_type_choice)
+
+        for i in range(1):
+            X, Y = prediction_generator.__getitem__(i)
+            print(X.shape, Y.shape)
+
+            xInference[gene] = X
+            yInference[gene] = Y
+
+            # np.save("../../Data/" + args.run_name + "." + gene + ".CT_" + str(cell_type_choice + 1) + ".npy", X)
+            # np.save("../../Data/" + args.run_name + "." +  gene + ".CT_" + str(cell_type_choice + 1) + ".TPM.npy", Y)
+
+
+    # assay_names = ['H3K36me3', 'H3K27me3', 'H3K27ac',
+    #                'H3K4me1', 'H3K4me3', 'H3K9me3', 'MNase']
+
+    # assay_colors = ['red', 'green', 'blue',
+    #                 'cyan', 'pink', 'brown', 'purple']
+
+    # Now load CRISPRa data from the Hilton Lab
+    df = pd.read_csv("../../Data/p300_epigenome_editing_dataset.tsv", sep="\t")
+
+    # For each position we have data for, perturb the epigenetic data and compute model predictions
+    peak_width_choices = [6, 8]
+    inserted_lnp1_minuslog10_p_value_choices = [1.5] # corresponds to p-value = 0.0003    
+
+    fig, axs = plt.subplots(len(peak_width_choices) * len(inserted_lnp1_minuslog10_p_value_choices), 2)
+    fig.set_size_inches(80, 80)
+
+    plot_number = 0
+    for peak_width in peak_width_choices:
+        for inserted_lnp1_minuslog10_p_value in inserted_lnp1_minuslog10_p_value_choices:
+            
+            axis_dict = {}
+            axis_dict['CXCR4'] = axs[plot_number, 0]
+            axis_dict['TGFBR1'] = axs[plot_number, 1]
+            plot_number += 1
+            ise_results = []
+
+            for index in tqdm(range(len(df))):
+
+                gene = df.iloc[index, 0]
+                if(gene not in gene_list):
+                    continue
+
+                chrom = CHROM[gene]
+                tss = TSS[gene]
+                strand = STRAND[gene]
+
+                bin_wrt_tss = df.iloc[index, 14] // RESOLUTION
+
+                CRISPRa_qPCR_fold_change = df.iloc[index, 6]
+
+                model_prediction_fold_change = ise(trained_model,
+                                                   xInference[gene],
+                                                   yInference[gene],
+                                                   bin_wrt_tss,
+                                                   peak_width,
+                                                   inserted_lnp1_minuslog10_p_value)
+        
+                ise_results.append([gene, peak_width, inserted_lnp1_minuslog10_p_value, bin_wrt_tss, CRISPRa_qPCR_fold_change, model_prediction_fold_change])
+
+            visualize_fold_change(axis_dict, ise_results)
+                
+    fig.savefig("../../Results/" + args.run_name + ".inference.pdf")
+
