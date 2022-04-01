@@ -5,8 +5,8 @@
 # It then computes correlations across cell types and within cell types across genes
 # It then creates a unified report for the model
 
-#$ -q gpu
-#$ -l gpus=1
+# # #$ -q gpu
+# # #$ -l gpus=1
 #$ -cwd
 #$ -N fpUTR
 #$ -o ../../Logs/

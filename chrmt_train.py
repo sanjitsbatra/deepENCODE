@@ -12,6 +12,11 @@ from tensorflow.keras.callbacks import LearningRateScheduler
 from tensorflow.keras.models import Model
 from tensorflow.keras.layers import BatchNormalization, Activation
 from tensorflow.keras.layers import Conv1D, Input, add
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import MaxPooling1D
+from tensorflow.keras.layers import Dropout
+from tensorflow.keras.layers import Dense
+from tensorflow.keras.layers import Flatten
 from tensorflow.keras.layers import Cropping1D
 from keras.models import load_model
 # from tensorflow.keras.layers import Flatten, Dense
@@ -107,26 +112,7 @@ def custom_loss(yTrue, yPred):
     return logcosh_loss
 
 
-def BAC(x_input, conv_kernel_size, num_filters):
-
-    x_output = BatchNormalization()(x_input)
-    x_output = Activation('relu')(x_output)
-    x_output = Conv1D(kernel_size=conv_kernel_size,
-                      filters=num_filters,
-                      padding='same')(x_output)
-
-    return x_output
-
-
-def residual_block(x, conv_kernel_size, num_filters):
-
-    x_1 = BAC(x, conv_kernel_size, num_filters)
-    x_2 = BAC(x_1, conv_kernel_size, num_filters)
-    output = add([x, x_2])
-
-    return output
-
-
+'''
 def create_epigenome_cnn(number_of_assays,
                          window_size,
                          num_filters,
@@ -152,38 +138,50 @@ def create_epigenome_cnn(number_of_assays,
     model = Model(inputs=inputs, outputs=outputs)
 
     return model
+'''
 
 
-def create_transcriptome_cnn(number_of_assays,
-                             window_size,
+def create_transcriptome_cnn(window_size,
+                             number_of_assays,
+                             num_layers,
                              num_filters,
-                             conv_kernel_size,
-                             num_convolutions,
-                             padding,
-                             number_of_outputs):
+                             conv_kernel_size):
 
+    # define the model input
     inputs = Input(shape=(window_size, number_of_assays), name='input')
-
-    assert(padding == "same")
-
-    # Initial convolution
-    x = BAC(inputs, conv_kernel_size, num_filters)
+    x = inputs
+    x = BatchNormalization(axis=-1)(x)
 
     # Perform multiple convolutional layers
-    for i in range(num_convolutions):
-        x = residual_block(x, conv_kernel_size, num_filters)
+    for i in range(num_layers):
 
-    # Final convolution
-    x = BAC(x, conv_kernel_size, 1)
-    outputs = Cropping1D(cropping=window_size // 2)(x)
+        x = BatchNormalization(axis=-1)(x)
+        x = Activation('relu')(x)
+        x = Conv1D(kernel_size=conv_kernel_size, filters=num_filters, padding='same')(x)
+        x = MaxPooling1D(pool_size=3)(x)
 
-    # x = Flatten()(x)
-    # x = Dense(64, activation='relu')(x)
-    # outputs = Dense(number_of_outputs, activation='linear')(x)
+    x = Flatten()(x)
+    x = Dense(16, activation='relu')(x) 
+    x = Dense(1, activation='linear')(x)
 
-    # construct the CNN
-    model = Model(inputs=inputs, outputs=outputs)
+    model = Model(inputs, x)
+    return model
 
+
+def create_transcriptome_linear(window_size,
+                                number_of_assays,
+                                num_layers,
+                                num_filters,
+                                conv_kernel_size):
+
+    # define the model input
+    inputs = Input(shape=(window_size, number_of_assays), name='input')
+    x = inputs
+    x = BatchNormalization(axis=-1)(x)
+    x = Flatten()(x)
+    x = Dense(1, activation='linear')(x)
+
+    model = Model(inputs, x)
     return model
 
 
@@ -219,14 +217,16 @@ if __name__ == '__main__':
     else:
         assert(loss == 'mse')
 
-    number_of_epochs = 100
+    number_of_epochs = 50
     generate_dataframe = False
 
     genome_wide = int(False)
 
-    run_name = (run_name_prefix + "_" + framework + "_" + str(genome_wide) + 
-                "_" + str(window_size) + "_" + str(num_layers) +
-                "_" + str(num_filters))
+    run_name = run_name_prefix 
+
+                # (+ "_" + framework + "_" + str(genome_wide) + 
+                # "_" + str(window_size) + "_" + str(num_layers) +
+                # "_" + str(num_filters))
 
     # tf.disable_v2_behavior()
     # tf.compat.v1.keras.backend.get_session()
@@ -297,13 +297,11 @@ if __name__ == '__main__':
 
     csv_logger = CSVLogger('../../Logs/' + run_name + '.csv', append=False)
 
-    model = create_transcriptome_cnn(len(ASSAY_TYPES),
-                                     window_size,
-                                     num_filters,
-                                     conv_kernel_size,
+    model = create_transcriptome_cnn(window_size,
+                                     len(ASSAY_TYPES),
                                      num_layers,
-                                     'same',
-                                     number_of_outputs)
+                                     num_filters,
+                                     conv_kernel_size)
 
     model.compile(loss=loss_function,
                   optimizer='adam',
@@ -340,7 +338,7 @@ if __name__ == '__main__':
 
         x, yTrue, metadata = testing_generator.__getitem__(test_i)
         True_Expression[test_i * batch_size:(test_i + 1) * batch_size] = yTrue
-        yPred = np.squeeze(trained_model.predict(x), axis=2)
+        yPred = trained_model.predict(x)
         Predicted_Expression[test_i * batch_size:
                              (test_i + 1) * batch_size] = yPred
         metadata_list.append(metadata)
@@ -359,8 +357,8 @@ if __name__ == '__main__':
     f_output.close()
 
     # Now we create a visualization of the training loss, validation loss
-    fig, axs = plt.subplots(2, 2)
-    fig.set_size_inches(12, 12)
+    fig, axs = plt.subplots(3, 2)
+    fig.set_size_inches(18, 18)
         
     epoch_number = []
     training_loss = []
@@ -381,7 +379,7 @@ if __name__ == '__main__':
     axs[0, 0].plot(epoch_number, validation_loss, 'o-', color="#8470FF", markersize=4, linewidth=3, label="validation_loss")
 
     axs[0, 0].set_xlim(-1, max(epoch_number) + 1)
-    axs[0, 0].set_ylim(0, 1)
+    axs[0, 0].set_ylim(0, 0.5)
     axs[0, 0].set_xlabel("Number of epochs")
     axs[0, 0].set_ylabel("Loss")
     axs[0, 0].legend(loc="upper center", fontsize=10, ncol=1)
@@ -407,9 +405,9 @@ if __name__ == '__main__':
         f_predictions.close()
 
         if(cell_type == "T13"):
-            axs[0, 1].plot(yTrue, yPred, 'o', markersize=5, color="#FF1493")
-            axs[0, 1].set_xlim(-1, 5)
-            axs[0, 1].set_ylim(-1, 5)
+            axs[0, 1].plot(yTrue, yPred, 'o', markersize=1, color="#FF1493")
+            axs[0, 1].set_xlim(-1, 4)
+            axs[0, 1].set_ylim(-1, 4)
             axs[0, 1].set_xlabel("True log10(TPM+1)")
             axs[0, 1].set_ylabel("Predicted log10(TPM+1)")
             axs[0, 1].set_title("HEK293T True vs Predicted gene expression")
@@ -434,7 +432,7 @@ if __name__ == '__main__':
 
     f_predictions.close()             
     
-    spearman_list = []
+    spearman_dict = {}
     CXCR4_spearman = -100
     TGFBR1_spearman = -100
     for transcript in yTrue:
@@ -443,7 +441,7 @@ if __name__ == '__main__':
         yP = yPred[transcript]
         sc, sp = spearmanr(yT, yP)
 
-        spearman_list.append(sc)
+        spearman_dict[transcript] = sc
 
         if(transcript == "ENST00000241393.3"):
             CXCR4_spearman = round(sc, 2)
@@ -451,13 +449,31 @@ if __name__ == '__main__':
             TGFBR1_spearman = round(sc, 2)
 
     sns.set_style('whitegrid')
-    sns.kdeplot(np.array(spearman_list), fill=True, alpha=0.5, linewidth=0.05, bw_adjust=0.2, color="#2ab0ff", ax=axs[1, 1])
+    sns.kdeplot(np.array(list(spearman_dict.values())), fill=True, alpha=0.5, linewidth=0.05, bw_adjust=0.2, color="#2ab0ff", ax=axs[1, 1])
     axs[1, 1].set_xlim(-1.1, 1.1)
     axs[1, 1].set_ylim(0, 2)
     axs[1, 1].set_title("Spearman across cell types for genes\n"+
                         "CXCR4 spearman = "+str(CXCR4_spearman)+
                         " TGFBR1 spearman = "+str(TGFBR1_spearman))
-                        
+              
+    axs[2, 0].plot([spearman_dict[transcript] for transcript in list(yTrue.keys())],
+                   [np.mean(yTrue[transcript]) for transcript in list(yTrue.keys())],
+                   'o', markersize=1, color="#2ab0ff") 
+    axs[2, 0].set_xlim(-1, 1)
+    axs[2, 0].set_ylim(-1, 5)
+    axs[2, 0].set_xlabel("Spearman")
+    axs[2, 0].set_ylabel("Mean True log10(TPM+1)")
+    axs[2, 0].set_title("Mean True gene expression vs\nSpearman across cell types")
+          
+    axs[2, 1].plot([spearman_dict[transcript] for transcript in list(yTrue.keys())],
+                   [np.max(yTrue[transcript]) - np.min(yTrue[transcript]) for transcript in list(yTrue.keys())],
+                   'o', markersize=1, color="#2ab0ff") 
+    axs[2, 1].set_xlim(-1, 1)
+    axs[2, 1].set_ylim(-1, 5)
+    axs[2, 1].set_xlabel("Spearman")
+    axs[2, 1].set_ylabel("Max-Min True log10(TPM+1)")
+    axs[2, 1].set_title("Max-Min True gene expression vs\nSpearman across cell types")
+          
     fig.savefig("../../Results/" + run_name + ".testing.pdf")
 
     os._exit(1)

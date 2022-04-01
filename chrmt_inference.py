@@ -34,8 +34,8 @@ def ise(trained_model, x, y, bin_wrt_tss, inserted_peak_width, inserted_lnp1_min
             # Modify the H3K27ac peak NOTE: this is ln( -log10(transformed p-value) + 1)
             x_modified[:, p, 3] += (x_modified[:, p, -1] * inserted_lnp1_minuslog10_p_value)
    
-    yPred = trained_model.predict(x[:, :, :-1])[0][0][0]
-    yPred_perturbed = trained_model.predict(x_modified[:, :, :-1])[0][0][0]
+    yPred = trained_model.predict(x[:, :, :-1])[0][0]
+    yPred_perturbed = trained_model.predict(x_modified[:, :, :-1])[0][0]
     
     model_prediction_fold_change = (np.power(10, yPred_perturbed) - 1) / (np.power(10, yPred + EPS) - 1) 
     
