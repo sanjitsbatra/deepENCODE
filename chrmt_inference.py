@@ -52,26 +52,36 @@ def p_value_mapping(inserted_lnp1_minuslog10_p_value):
 # Visualize true vs predicted fold change
 def visualize_fold_change(axis_dict, ise_results):
 
-    yTrue = {}
-    yPred = {}
+    yTrue_gRNA = {}
+    yPred_gRNA = {}
     gene_list = ['CXCR4', 'TGFBR1']    
     for gene in gene_list:
-        yTrue[gene] = []
-        yPred[gene] = []
+        yTrue_gRNA[gene] = {}
+        yPred_gRNA[gene] = {}
 
     for e in ise_results:
         
-        gene, peak_width, inserted_lnp1_minuslog10_p_value, bin_wrt_tss, CRISPRa_qPCR_fold_change, model_prediction_fold_change = e        
-                
-        yTrue[gene].append(CRISPRa_qPCR_fold_change)
-        yPred[gene].append(model_prediction_fold_change)
+        gene, peak_width, inserted_lnp1_minuslog10_p_value, gRNA_ID, bin_wrt_tss, CRISPRa_qPCR_fold_change, model_prediction_fold_change = e        
+        
+        if(gRNA_ID in yTrue_gRNA[gene]):
+            yTrue_gRNA[gene][gRNA_ID].append(CRISPRa_qPCR_fold_change)
+            yPred_gRNA[gene][gRNA_ID].append(model_prediction_fold_change)
+        else:
+            yTrue_gRNA[gene][gRNA_ID] = [CRISPRa_qPCR_fold_change]
+            yPred_gRNA[gene][gRNA_ID] = [model_prediction_fold_change]
+    
+    yTrue_mean = {}
+    yPred_mean = {}
+    for gene in gene_list:
+        yTrue_mean[gene] = [np.mean(yTrue_gRNA[gene][gRNA_ID]) for gRNA_ID in list(yTrue_gRNA[gene].keys())]
+        yPred_mean[gene] = [np.mean(yPred_gRNA[gene][gRNA_ID]) for gRNA_ID in list(yPred_gRNA[gene].keys())]
     
     # Create a scatter plot of the means vs predictions
     for gene in gene_list:    
-        pc, pp = pearsonr(yTrue[gene], yTrue[gene])
-        sc, sp = spearmanr(yTrue[gene], yPred[gene])
+        pc, pp = pearsonr(yTrue_mean[gene], yPred_mean[gene])
+        sc, sp = spearmanr(yTrue_mean[gene], yPred_mean[gene])
 
-        axis_dict[gene].plot(yTrue[gene], yPred[gene], 'o', markersize=30, color="#FF1493")
+        axis_dict[gene].plot(yTrue_mean[gene], yPred_mean[gene], 'o', markersize=30, color="#FF1493")
         axis_dict[gene].set_xlim(-1, 10)
         axis_dict[gene].set_ylim(-1, 10)
         axis_dict[gene].tick_params(axis='both', which='major', labelsize=40)
@@ -151,7 +161,7 @@ if __name__ == '__main__':
     inserted_lnp1_minuslog10_p_value_choices = [1.5] # corresponds to p-value = 0.0003    
 
     fig, axs = plt.subplots(len(peak_width_choices) * len(inserted_lnp1_minuslog10_p_value_choices), 2)
-    fig.set_size_inches(80, 80)
+    fig.set_size_inches(60, 60)
 
     plot_number = 0
     for peak_width in peak_width_choices:
@@ -173,6 +183,7 @@ if __name__ == '__main__':
                 tss = TSS[gene]
                 strand = STRAND[gene]
 
+                gRNA_ID = df.iloc[index, 5]
                 bin_wrt_tss = df.iloc[index, 14] // RESOLUTION
 
                 CRISPRa_qPCR_fold_change = df.iloc[index, 6]
@@ -184,7 +195,7 @@ if __name__ == '__main__':
                                                    peak_width,
                                                    inserted_lnp1_minuslog10_p_value)
         
-                ise_results.append([gene, peak_width, inserted_lnp1_minuslog10_p_value, bin_wrt_tss, CRISPRa_qPCR_fold_change, model_prediction_fold_change])
+                ise_results.append([gene, peak_width, inserted_lnp1_minuslog10_p_value, gRNA_ID, bin_wrt_tss, CRISPRa_qPCR_fold_change, model_prediction_fold_change])
 
             visualize_fold_change(axis_dict, ise_results)
                 

@@ -20,7 +20,9 @@ ACTIVE_ASSAY_TYPES = ["A" + "{0:0=2d}".format(i) for i in range(2, 8)]
 
 training_chroms = ["chr"+str(i) for i in range(1, 23, 2)]
 validation_chroms = ["chr"+str(i) for i in range(2, 23, 2)]
-testing_chroms = ["chr"+str(i) for i in range(2, 23, 2)] + ["chr9"]
+testing_chroms = ["chr"+str(i) for i in range(2, 23, 2)]
+training_chroms.remove("chr9")
+testing_chroms = testing_chroms + ["chr9"]
 inference_chroms = ["chr"+str(i) for i in [2, 9]]
 
 DEBUG = False
