@@ -4,7 +4,7 @@ import seaborn as sns
 import numpy as np
 import pandas as pd
 from chrmt_generator import TranscriptomeGenerator, TranscriptomePredictor
-from chrmt_train import maximum_likelihood_loss
+# from chrmt_train import maximum_likelihood_loss
 from tensorflow.keras.models import load_model
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestRegressor
@@ -14,6 +14,7 @@ from sklearn.preprocessing import PolynomialFeatures
 from sklearn.metrics import r2_score, mean_squared_error
 from scipy.stats import spearmanr, pearsonr
 import matplotlib.pyplot as plt
+from matplotlib.backends.backend_pdf import PdfPages        
 from matplotlib.ticker import MaxNLocator
 import random
 import itertools
@@ -59,7 +60,7 @@ def generate_data_vectors(cell_type_choice, window_size, path_to_save):
     return xInference, yInference, gene_list, CHROM, TSS, STRAND
 
 
-def perturb_x(x, bin_wrt_tss, inserted_peak_width, inserted_lnp1_minuslog10_p_value):
+def perturb_x(x, bin_wrt_tss, inserted_peak_width, inserted_lnp1_minuslog10_p_value, stranded_MNase_offset):
 
     # Here the shape of x would be 1 x window_size x NUMBER_OF_ASSAYS + 1 (for the MNase)
     half_window_size = (x.shape[1] - 1) // 2
@@ -68,7 +69,7 @@ def perturb_x(x, bin_wrt_tss, inserted_peak_width, inserted_lnp1_minuslog10_p_va
     for p in range(bin_wrt_tss - inserted_peak_width // 2, 
                    bin_wrt_tss + inserted_peak_width // 2 + 1):
         
-        position_in_x = p + half_window_size
+        position_in_x = p + half_window_size + stranded_MNase_offset
 
         if( (position_in_x >= 0) and (position_in_x < 2 * half_window_size) ):
 
@@ -79,9 +80,9 @@ def perturb_x(x, bin_wrt_tss, inserted_peak_width, inserted_lnp1_minuslog10_p_va
 
 
 # Perform in silico epi-mutagenesis
-def ise(window_size, trained_model, x, y, bin_wrt_tss, inserted_peak_width, inserted_lnp1_minuslog10_p_value):
+def ise(window_size, trained_model, x, y, bin_wrt_tss, inserted_peak_width, inserted_lnp1_minuslog10_p_value, stranded_MNase_offset):
 
-    x_perturbed = perturb_x(x, bin_wrt_tss, inserted_peak_width, inserted_lnp1_minuslog10_p_value)
+    x_perturbed = perturb_x(x, bin_wrt_tss, inserted_peak_width, inserted_lnp1_minuslog10_p_value, stranded_MNase_offset)
    
     yPred = trained_model.predict(x[:, :, :-1])[0][0]
     yPred_perturbed = trained_model.predict(x_perturbed[:, :, :-1])[0][0]
@@ -92,9 +93,9 @@ def ise(window_size, trained_model, x, y, bin_wrt_tss, inserted_peak_width, inse
 
 
 # Perform in silico epi-mutagenesis when the input is a pair of epigenetic tracks
-def ise_pairwise_input(window_size, trained_model, x, y, bin_wrt_tss, inserted_peak_width, inserted_lnp1_minuslog10_p_value):
+def ise_pairwise_input(window_size, trained_model, x, y, bin_wrt_tss, inserted_peak_width, inserted_lnp1_minuslog10_p_value, stranded_MNase_offset):
 
-    x_perturbed = perturb_x(x, bin_wrt_tss, inserted_peak_width, inserted_lnp1_minuslog10_p_value)   
+    x_perturbed = perturb_x(x, bin_wrt_tss, inserted_peak_width, inserted_lnp1_minuslog10_p_value, stranded_MNase_offset)   
     # create the pairwise input
     half_window_size = (x.shape[1] - 1) // 2
     operative_half_window_size = (window_size - 1) // 2
@@ -134,7 +135,7 @@ def visualize_fold_change(axis_dict, ise_results):
 
     for e in ise_results:
         
-        gene, peak_width, inserted_lnp1_minuslog10_p_value, gRNA_ID, bin_wrt_tss, CRISPRa_qPCR_fold_change, model_prediction_fold_change = e        
+        gene, peak_width, inserted_lnp1_minuslog10_p_value, stranded_MNase_offset, gRNA_ID, bin_wrt_tss, CRISPRa_qPCR_fold_change, model_prediction_fold_change = e        
         
         if(gRNA_ID in yTrue_gRNA[gene]):
             yTrue_gRNA[gene][gRNA_ID].append(CRISPRa_qPCR_fold_change)
@@ -161,9 +162,10 @@ def visualize_fold_change(axis_dict, ise_results):
         axis_dict[gene].tick_params(axis='both', which='minor', labelsize=40)
         axis_dict[gene].set_xlabel("CRISPRa qPCR fold change", size=60)
         axis_dict[gene].set_ylabel("Model prediction's fold change", size=45)
-        axis_dict[gene].set_title("Gene: "+gene+
+        axis_dict[gene].set_title(""+gene+
                                   " peak_width = "+str(peak_width)+
-                                  " inserted -log10(p-value) = "+str(p_value_mapping(inserted_lnp1_minuslog10_p_value))+
+                                  " -log10(p-value) = "+str(p_value_mapping(inserted_lnp1_minuslog10_p_value))+
+                                  "\nstranded MNase offset = "+str(stranded_MNase_offset)+
                                   "\nCorrelation between experimental and "+
                                   "predicted fold change\nPearson = "+
                                   str(round(pc, 2))+
@@ -181,6 +183,7 @@ def perform_ise(fig, axs,
                 path_to_dataset, ise_function,
                 peak_width_choices,
                 inserted_lnp1_minuslog10_p_value_choices,
+                MNase_offset,
                 xInference, yInference,
                 gene_list, CHROM, TSS, STRAND, 
                 trained_model):
@@ -223,15 +226,25 @@ def perform_ise(fig, axs,
 
                 CRISPRa_qPCR_fold_change = df.iloc[index, 6]
 
+                gRNA_strand = df.iloc[index, 7]
+                if(gRNA_strand == "plus"):
+                    stranded_MNase_offset = MNase_offset * -1
+                elif(gRNA_strand == "minus"):
+                    stranded_MNase_offset = MNase_offset * +1
+                else:
+                    print("gRNA strand seems incorrect", file=sys.stderr)
+                    stranded_MNase_offset = 0
+
                 model_prediction_fold_change = ise_function(window_size,
                                                    trained_model,
                                                    xInference[gene],
                                                    yInference[gene],
                                                    bin_wrt_tss,
                                                    peak_width,
-                                                   inserted_lnp1_minuslog10_p_value)
+                                                   inserted_lnp1_minuslog10_p_value,
+                                                   stranded_MNase_offset)
         
-                ise_results.append([gene, peak_width, inserted_lnp1_minuslog10_p_value, gRNA_ID, bin_wrt_tss, CRISPRa_qPCR_fold_change, model_prediction_fold_change])
+                ise_results.append([gene, peak_width, inserted_lnp1_minuslog10_p_value, stranded_MNase_offset, gRNA_ID, bin_wrt_tss, CRISPRa_qPCR_fold_change, model_prediction_fold_change])
 
             visualize_fold_change(axis_dict, ise_results)
 
@@ -246,7 +259,7 @@ if __name__ == '__main__':
     parser.add_argument('--window_size', type=int)
     args = parser.parse_args()
 
-    trained_model = load_model(args.trained_model)
+    trained_model = load_model(args.trained_model, compile=False)
 
     # Generate data vectors for CXCR4 and TGFBR1
     cell_type_choice = -1
@@ -255,16 +268,24 @@ if __name__ == '__main__':
 
     peak_width_choices = [6, 8]
     inserted_lnp1_minuslog10_p_value_choices = [1.5]  # corresponds to 0.0003
-    fig, axs = plt.subplots(len(peak_width_choices) * len(inserted_lnp1_minuslog10_p_value_choices), 2)
 
-    path_to_dataset = "../../Data/p300_epigenome_editing_dataset.tsv"
-    perform_ise(fig, axs,
+    with PdfPages("../../Results/" + args.run_name + ".inference.pdf") as pdf:
+
+        for MNase_offset in range(-1, 1 + 1):
+
+            fig, axs = plt.subplots(len(peak_width_choices) * len(inserted_lnp1_minuslog10_p_value_choices), 2)
+
+            path_to_dataset = "../../Data/p300_epigenome_editing_dataset.tsv"
+            perform_ise(fig, axs,
                 args.window_size,
                 path_to_dataset, ise,
                 peak_width_choices,
                 inserted_lnp1_minuslog10_p_value_choices,
+                MNase_offset,
                 xInference, yInference,
                 gene_list, CHROM, TSS, STRAND,                
                 trained_model)
 
-    fig.savefig("../../Results/" + args.run_name + ".inference.pdf")
+            pdf.savefig(fig)
+            plt.close()
+

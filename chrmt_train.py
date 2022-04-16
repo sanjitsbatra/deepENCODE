@@ -54,42 +54,46 @@ def clean_up_models(prefix, max_epoch_num):
 
 
 # Compute a loss that incorporates both mean and variance
-def maximum_likelihood_loss(yTrue, yPred):
+def mle_wrapper(mle_lambda):
 
-    DEBUG = False
-    if(DEBUG):
-        yTrue = K.print_tensor(yTrue, message='yTrue = ')
+    def maximum_likelihood_loss(yTrue, yPred):
 
-    yTrue_flattened = K.flatten(yTrue)
+        DEBUG = False
+        if(DEBUG):
+            yTrue = K.print_tensor(yTrue, message='yTrue = ')
 
-    if(DEBUG):
-        yTrue_flattened = K.print_tensor(yTrue_flattened,
-                                         message='yTrue_fl = ')
-        yPred = K.print_tensor(yPred, message='yPred = ')
+        yTrue_flattened = K.flatten(yTrue)
 
-    yPred_mean = yPred[:, 0]
+        if(DEBUG):
+            yTrue_flattened = K.print_tensor(yTrue_flattened,
+                                             message='yTrue_fl = ')
+            yPred = K.print_tensor(yPred, message='yPred = ')
 
-    if(DEBUG):
-        yPred_mean = K.print_tensor(yPred_mean, message='pm = ')
+        yPred_mean = yPred[:, 0]
 
-    yPred_log_precision = yPred[:, 1] + EPS
+        if(DEBUG):
+            yPred_mean = K.print_tensor(yPred_mean, message='pm = ')
 
-    if(DEBUG):
-        yPred_log_precision = K.print_tensor(yPred_log_precision,
-                                             message='ylp = ')
+        yPred_log_precision = yPred[:, 1] + EPS
 
-    squared_loss = K.square(yTrue_flattened - yPred_mean)
+        if(DEBUG):
+            yPred_log_precision = K.print_tensor(yPred_log_precision,
+                                                 message='ylp = ')
 
-    if(DEBUG):
-        squared_loss = K.print_tensor(squared_loss, message='squared loss = ')
+        squared_loss = K.square(yTrue_flattened - yPred_mean)
 
-    loss = K.mean(squared_loss * K.exp(yPred_log_precision), axis=-1)
-    loss = loss - 1.0 * K.mean(yPred_log_precision, axis=-1)
+        if(DEBUG):
+            squared_loss = K.print_tensor(squared_loss, message='squared loss = ')
 
-    if(DEBUG):
-        loss = K.print_tensor(loss, message='loss = ')
+        loss = K.mean(squared_loss * K.exp(yPred_log_precision), axis=-1)
+        loss = loss - mle_lambda * K.mean(yPred_log_precision, axis=-1)
 
-    return loss
+        if(DEBUG):
+            loss = K.print_tensor(loss, message='loss = ')
+
+        return loss
+
+    return maximum_likelihood_loss
 
 
 # Compute an MSE loss for LM only at those positions that are NOT MASK_VALUE
@@ -150,7 +154,8 @@ def create_transcriptome_cnn(window_size,
                              number_of_assays,
                              num_layers,
                              num_filters,
-                             conv_kernel_size):
+                             conv_kernel_size,
+                             number_of_outputs):
 
     # define the model input
     inputs = Input(shape=(window_size, number_of_assays), name='input')
@@ -168,7 +173,7 @@ def create_transcriptome_cnn(window_size,
 
     x = Flatten()(x)
     x = Dense(16, activation='relu')(x) 
-    x = Dense(1, activation='linear')(x)
+    x = Dense(number_of_outputs, activation='linear')(x)
 
     model = Model(inputs, x)
     return model
@@ -178,14 +183,15 @@ def create_transcriptome_linear(window_size,
                                 number_of_assays,
                                 num_layers,
                                 num_filters,
-                                conv_kernel_size):
+                                conv_kernel_size,
+                                number_of_outputs):
 
     # define the model input
     inputs = Input(shape=(window_size, number_of_assays), name='input')
     x = inputs
     x = BatchNormalization(axis=-1)(x)
     x = Flatten()(x)
-    x = Dense(1, activation='linear', kernel_regularizer=keras.regularizers.l2(l=0.1))(x)
+    x = Dense(number_of_outputs, activation='linear', kernel_regularizer=keras.regularizers.l2(l=0.01))(x)
 
     model = Model(inputs, x)
     return model
@@ -294,6 +300,9 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--run_name')
     parser.add_argument('--framework')
+    parser.add_argument('--loss')
+    parser.add_argument('--model')
+    parser.add_argument('--mle_lambda', type=float)
     parser.add_argument('--window_size', type=int)
     parser.add_argument('--num_layers', type=int)
     parser.add_argument('--num_filters', type=int)
@@ -308,20 +317,18 @@ if __name__ == '__main__':
     num_layers = args.num_layers
     num_filters = args.num_filters
 
-    batch_size = 1
+    batch_size = 64
     conv_kernel_size = 5
     masking_prob = 0.0
     padding = 'same'
+    loss = args.loss
 
-    loss = 'mse'
     if(((loss == 'mse') or (loss == 'mle')) is False):
 
         print("Loss should be mse or mle", file=sys.stderr)
         sys.exit(-1)
-    else:
-        assert(loss == 'mse')
 
-    number_of_epochs = 10
+    number_of_epochs = 3
     generate_dataframe = False
 
     genome_wide = int(False)
@@ -347,6 +354,7 @@ if __name__ == '__main__':
                                      conv_kernel_size,
                                      num_layers,
                                      'same')
+
     elif(framework == "transcriptome"):
 
         if(loss == 'mse'):
@@ -356,7 +364,7 @@ if __name__ == '__main__':
 
         elif(loss == 'mle'):
 
-            loss_function = maximum_likelihood_loss
+            loss_function = mle_wrapper(args.mle_lambda)
             number_of_outputs = 2
 
         DataGenerator = TranscriptomeGenerator
@@ -402,17 +410,28 @@ if __name__ == '__main__':
     csv_logger = CSVLogger('../../Logs/' + run_name + '.csv', append=False)
 
 
-    # '''
-    model = create_transcriptome_cnn(window_size,
-                                     len(ASSAY_TYPES),
-                                     num_layers,
-                                     num_filters,
-                                     conv_kernel_size)
-    '''
+    model_type = args.model
 
-    model = return_wavenet_model("wavenet_p192", window_size, num_filters, len(ASSAY_TYPES), 1)
-
-    '''
+    if(model_type == "maxpool"):
+        model = create_transcriptome_cnn(window_size,
+                                         len(ASSAY_TYPES),
+                                         num_layers,
+                                         num_filters,
+                                         conv_kernel_size,
+                                         number_of_outputs)
+    elif(model_type == "linear"):
+        model = create_transcriptome_linear(window_size,
+                                            len(ASSAY_TYPES),
+                                            num_layers,
+                                            num_filters,
+                                            conv_kernel_size,
+                                            number_of_outputs)
+    elif(model_type == "wavenet"):
+        assert(loss == "mse")
+        model = return_wavenet_model("wavenet_p192", window_size, num_filters, len(ASSAY_TYPES), number_of_outputs)
+    else:
+        print("Model type must be one of maxpool, linear or wavenet", file=sys.stderr)
+        assert(False)
 
     model.compile(loss=loss_function,
                   optimizer='adam',
@@ -437,7 +456,7 @@ if __name__ == '__main__':
     # the first is the correlation of predictions across genes, for each cell type
     # the second is the correlation across cell types, for each gene
     # these two metrics then need to be summarized as figures, for each model
-    trained_model = load_model('../../Models/' + run_name + '.hdf5')
+    trained_model = load_model('../../Models/' + run_name + '.hdf5', compile=False)
 
     testing_generator_len = len(list(testing_generator))
     
@@ -449,7 +468,13 @@ if __name__ == '__main__':
 
         x, yTrue, metadata = testing_generator.__getitem__(test_i)
         True_Expression[test_i * batch_size:(test_i + 1) * batch_size] = yTrue
-        yPred = np.squeeze(trained_model.predict(x), axis=-1)
+
+        if(loss == 'mse'):
+            yPred = trained_model.predict(x)
+        elif(loss == 'mle'):
+            # print(trained_model.predict(x).shape)
+            yPred = np.expand_dims(trained_model.predict(x)[:, 0], axis=1)
+
         Predicted_Expression[test_i * batch_size:
                              (test_i + 1) * batch_size] = yPred
         metadata_list.append(metadata)

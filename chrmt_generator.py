@@ -18,7 +18,7 @@ CELL_TYPES = ["T" + "{0:0=2d}".format(i) for i in range(1, 14)]
 ASSAY_TYPES = ["A" + "{0:0=2d}".format(i) for i in range(2, 8)]
 ACTIVE_ASSAY_TYPES = ["A" + "{0:0=2d}".format(i) for i in range(2, 8)]
 
-training_chroms = ["chr"+str(i) for i in range(1, 18, 1)]
+training_chroms = ["chr"+str(i) for i in range(17, 18, 1)]
 validation_chroms = ["chr"+str(i) for i in range(18, 23, 1)]
 testing_chroms = ["chr"+str(i) for i in range(18, 23, 1)]
 
