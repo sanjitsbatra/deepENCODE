@@ -12,8 +12,8 @@
 #$ -o ../../Logs/
 #$ -e ../../Logs/
 #$ -j y
-#$ -l h_vmem=102g
-#$ -l mem_free=100g
+#$ -l h_vmem=162g
+#$ -l mem_free=160g
 
 # Move to Code directory and activate the conda environment
 cd "/home/sbatra/.chrmt/Code/deepENCODE/"
@@ -30,4 +30,4 @@ run_name=${output_prefix}"_0_transcriptome_"${window_size}"_"${num_layers}"_"${n
 python chrmt_train.py --run_name ${run_name} --framework transcriptome --window_size ${window_size} --num_layers ${num_layers} --num_filters ${num_filters}
 
 # Step - 2: Perform inference on the CRISPRa data from the Hilton Lab
-python chrmt_inference.py --run_name ${run_name} --trained_model ../../Models/${run_name}.hdf5 --window_size ${window_size}
+# python chrmt_inference.py --run_name ${run_name} --trained_model ../../Models/${run_name}.hdf5 --window_size ${window_size}

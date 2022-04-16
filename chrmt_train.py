@@ -11,19 +11,24 @@ from chrmt_generator import ASSAY_TYPES, CELL_TYPES, MASK_VALUE, EPS
 from tensorflow.keras.callbacks import LearningRateScheduler
 from tensorflow.keras.models import Model
 from tensorflow.keras.layers import BatchNormalization, Activation
-from tensorflow.keras.layers import Conv1D, Input, add
+from tensorflow.keras.layers import Conv1D
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import MaxPooling1D
 from tensorflow.keras.layers import Dropout
 from tensorflow.keras.layers import Dense
 from tensorflow.keras.layers import Flatten
 from tensorflow.keras.layers import Cropping1D
+from tensorflow.keras.layers import Reshape
+from tensorflow.keras.layers import GlobalAveragePooling1D, AveragePooling1D, UpSampling1D
+from tensorflow.keras.layers import multiply, add, average, subtract
+from tensorflow.keras import Input, Model
 from keras.models import load_model
 # from tensorflow.keras.layers import Flatten, Dense
 # from keras.losses import logcosh
 from tensorflow.keras.optimizers import Adam
 from keras.callbacks import ModelCheckpoint, LearningRateScheduler, CSVLogger
 from keras import backend as K
+import keras
 from tqdm.keras import TqdmCallback
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
@@ -158,6 +163,7 @@ def create_transcriptome_cnn(window_size,
         x = BatchNormalization(axis=-1)(x)
         x = Activation('relu')(x)
         x = Conv1D(kernel_size=conv_kernel_size, filters=num_filters, padding='same')(x)
+        x = Dropout(0.1)(x)
         x = MaxPooling1D(pool_size=3)(x)
 
     x = Flatten()(x)
@@ -179,10 +185,108 @@ def create_transcriptome_linear(window_size,
     x = inputs
     x = BatchNormalization(axis=-1)(x)
     x = Flatten()(x)
-    x = Dense(1, activation='linear')(x)
+    x = Dense(1, activation='linear', kernel_regularizer=keras.regularizers.l2(l=0.1))(x)
 
     model = Model(inputs, x)
     return model
+
+
+def bac_unit(num_kernels, kernel_size, **kwargs):
+
+    def f(input_node):
+
+        bn = BatchNormalization()(input_node)
+        act = Activation('relu')(bn)
+        output_node = Conv1D(num_kernels, kernel_size, **kwargs)(act)
+
+        return output_node
+
+    return f
+
+
+def se_unit(num_kernels, ratio):
+
+    def f(input_node):
+
+        se = GlobalAveragePooling1D()(input_node)
+        se = Dense(num_kernels // ratio, activation='relu')(se)
+        se = Dense(num_kernels, activation='sigmoid')(se)
+        output_node = multiply([input_node, se])
+
+        return output_node
+
+    return f
+
+
+def residual_unit(num_kernels, kernel_size, dilation_rate, **kwargs):
+
+    def f(input_node):
+
+        bac1 = bac_unit(num_kernels, kernel_size, dilation_rate=dilation_rate, padding='same', **kwargs)(input_node)
+        drop = Dropout(0.1)(bac1)
+        bac2 = bac_unit(num_kernels, kernel_size, dilation_rate=dilation_rate, padding='same', **kwargs)(drop)
+        drop = Dropout(0.1)(bac2)
+        se = se_unit(num_kernels, 2)(drop)
+
+        output_node = add([input_node, se])
+        
+        return output_node
+
+    return f
+
+
+def wavenet(l, num_kernels, kernel_size_array, dilation_rate_array, in_channels, out_channels):
+
+    input0 = Input(shape=(l, in_channels))
+
+    conv = [[] for _ in range(len(kernel_size_array) + 1)]
+    conv[0] = bac_unit(num_kernels, 1)(input0)
+    for i in range(len(kernel_size_array)):
+        conv[i + 1] = residual_unit(num_kernels, kernel_size_array[i], dilation_rate_array[i],
+                                    kernel_initializer='he_uniform')(conv[i])
+
+    prefinal = bac_unit(out_channels, 1, activation='relu')(conv[-1])
+
+    crop_len = np.sum(((np.asarray(kernel_size_array) - 1) * np.asarray(dilation_rate_array)))
+    output0 = Cropping1D((crop_len, crop_len))(prefinal)
+
+    return Model(inputs=input0, outputs=output0)
+
+
+def return_wavenet_model(model, l, num_kernels, in_channels, out_channels):
+
+    if model == 'wavenet_p128':
+
+        kernel_size_array = [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5]
+        dilation_rate_array = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+
+        return wavenet(l, num_kernels, kernel_size_array, dilation_rate_array, in_channels, out_channels)
+
+    elif model == 'wavenet_p192':
+
+        kernel_size_array = [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5]
+        dilation_rate_array = [1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2]
+
+        return wavenet(l, num_kernels, kernel_size_array, dilation_rate_array, in_channels, out_channels)
+
+    elif model == 'wavenet_p480':
+
+        kernel_size_array = [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5]
+        dilation_rate_array = [1, 1, 1, 1, 2, 2, 2, 2, 4, 4, 4, 4, 8, 8, 8, 8]
+
+        return wavenet(l, num_kernels, kernel_size_array, dilation_rate_array, in_channels, out_channels)
+
+    elif model == 'wavenet_p752':
+
+        kernel_size_array = [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5]
+        dilation_rate_array = [1, 1, 2, 2, 4, 4, 8, 8, 16, 16, 16, 16]
+
+        return wavenet(l, num_kernels, kernel_size_array, dilation_rate_array, in_channels, out_channels)
+
+    else:
+
+        print("Model provided is incorrect...exiting", model, file=sys.stderr)
+        os._exit(-1)
 
 
 if __name__ == '__main__':
@@ -204,7 +308,7 @@ if __name__ == '__main__':
     num_layers = args.num_layers
     num_filters = args.num_filters
 
-    batch_size = 64
+    batch_size = 1
     conv_kernel_size = 5
     masking_prob = 0.0
     padding = 'same'
@@ -217,7 +321,7 @@ if __name__ == '__main__':
     else:
         assert(loss == 'mse')
 
-    number_of_epochs = 50
+    number_of_epochs = 10
     generate_dataframe = False
 
     genome_wide = int(False)
@@ -291,17 +395,24 @@ if __name__ == '__main__':
 
     checkpoint = ModelCheckpoint("../../Models/" + run_name + "-" +
                                  "{epoch:03d}" + ".hdf5",
-                                 verbose=0, save_best_only=True)
+                                 verbose=0, save_best_only=True) # CHANGE TO FALSE IF TESTING ON TRAINING
 
     lr_schedule = LearningRateScheduler(lr_scheduler)
 
     csv_logger = CSVLogger('../../Logs/' + run_name + '.csv', append=False)
 
+
+    # '''
     model = create_transcriptome_cnn(window_size,
                                      len(ASSAY_TYPES),
                                      num_layers,
                                      num_filters,
                                      conv_kernel_size)
+    '''
+
+    model = return_wavenet_model("wavenet_p192", window_size, num_filters, len(ASSAY_TYPES), 1)
+
+    '''
 
     model.compile(loss=loss_function,
                   optimizer='adam',
@@ -338,7 +449,7 @@ if __name__ == '__main__':
 
         x, yTrue, metadata = testing_generator.__getitem__(test_i)
         True_Expression[test_i * batch_size:(test_i + 1) * batch_size] = yTrue
-        yPred = trained_model.predict(x)
+        yPred = np.squeeze(trained_model.predict(x), axis=-1)
         Predicted_Expression[test_i * batch_size:
                              (test_i + 1) * batch_size] = yPred
         metadata_list.append(metadata)

@@ -18,11 +18,20 @@ CELL_TYPES = ["T" + "{0:0=2d}".format(i) for i in range(1, 14)]
 ASSAY_TYPES = ["A" + "{0:0=2d}".format(i) for i in range(2, 8)]
 ACTIVE_ASSAY_TYPES = ["A" + "{0:0=2d}".format(i) for i in range(2, 8)]
 
-training_chroms = ["chr"+str(i) for i in range(1, 23, 2)]
-validation_chroms = ["chr"+str(i) for i in range(2, 23, 2)]
-testing_chroms = ["chr"+str(i) for i in range(2, 23, 2)]
-training_chroms.remove("chr9")
-testing_chroms = testing_chroms + ["chr9"]
+training_chroms = ["chr"+str(i) for i in range(1, 18, 1)]
+validation_chroms = ["chr"+str(i) for i in range(18, 23, 1)]
+testing_chroms = ["chr"+str(i) for i in range(18, 23, 1)]
+
+# Remove CXCR4 and TGFBR1 chromosomes from training and add them to validation and testing
+if("chr2" in training_chroms):
+    training_chroms.remove("chr2")
+if("chr9" in training_chroms):
+    training_chroms.remove("chr9")
+validation_chroms = validation_chroms + ["chr2", "chr9"]
+testing_chroms = testing_chroms + ["chr2", "chr9"]
+
+# testing_chroms = training_chroms # TEMPORARY FOR UNDERSTANDING PERFORMANCE METRICS ON TRAINING DATA
+
 inference_chroms = ["chr"+str(i) for i in [2, 9]]
 
 DEBUG = False
@@ -52,7 +61,7 @@ TSS_DATA = "../../Data/Gene_Expression_Data/" \
 # Gap_Regions = pr.read_bed('../Data/hg38.Gaps.bed', as_df=False)
 
 if(PRINT_FEATURES):
-    f_output = open("../Data/Training_Data.csv", 'a')
+    f_output = open("../../Data/Training_Data.csv", 'w')
 
 
 def check_region(chrom, start, end):
@@ -572,7 +581,7 @@ class TranscriptomePredictor(EpigenomeGenerator):
     def __init__(self, window_size, batch_size,
                  shuffle=False, mode='inference', masking_probability=0.,
                  chrom="chr1", start=1, strand="+",
-                 cell_type=13-1):
+                 cell_type=-1):
 
         self.window_size = window_size
         self.batch_size = batch_size

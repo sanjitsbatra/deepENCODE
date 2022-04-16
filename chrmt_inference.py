@@ -24,18 +24,91 @@ import argparse
 from tqdm import tqdm
 
 
-# Perform in silico epi-mutagenesis
-def ise(trained_model, x, y, bin_wrt_tss, inserted_peak_width, inserted_lnp1_minuslog10_p_value):
+def generate_data_vectors(cell_type_choice, window_size, path_to_save):
 
-    x_modified = np.copy(x)
+    CHROM = {'CXCR4':'chr2', 'TGFBR1':'chr9'}
+    TSS = {'CXCR4':136118149, 'TGFBR1':99105113}
+    STRAND = {'CXCR4':'-','TGFBR1':'+'}
+
+    xInference = {}
+    yInference = {}
+
+    gene_list = ["CXCR4", "TGFBR1"]
+    for gene in gene_list:
+        
+        prediction_generator = TranscriptomePredictor(window_size,
+                               1,
+                               shuffle=False,
+                               mode='inference',
+                               masking_probability=0.0,
+                               chrom=CHROM[gene], 
+                               start=int(TSS[gene]),
+                               strand=STRAND[gene],
+                               cell_type=cell_type_choice)
+
+        for i in range(1):
+            X, Y = prediction_generator.__getitem__(i)
+            print(X.shape, Y.shape)
+
+            xInference[gene] = X
+            yInference[gene] = Y
+
+            # np.save(path_to_save + "." + gene + ".CT_" + str(cell_type_choice) + ".npy", X)
+            # np.save(path_to_save + "." +  gene + ".CT_" + str(cell_type_choice) + ".TPM.npy", Y)
+
+    return xInference, yInference, gene_list, CHROM, TSS, STRAND
+
+
+def perturb_x(x, bin_wrt_tss, inserted_peak_width, inserted_lnp1_minuslog10_p_value):
+
+    # Here the shape of x would be 1 x window_size x NUMBER_OF_ASSAYS + 1 (for the MNase)
+    half_window_size = (x.shape[1] - 1) // 2
+
+    x_perturbed = np.copy(x)
     for p in range(bin_wrt_tss - inserted_peak_width // 2, 
                    bin_wrt_tss + inserted_peak_width // 2 + 1):
-        if( (p >= 0) and (p < x.shape[1]) ):
+        
+        position_in_x = p + half_window_size
+
+        if( (position_in_x >= 0) and (position_in_x < 2 * half_window_size) ):
+
             # Modify the H3K27ac peak NOTE: this is ln( -log10(transformed p-value) + 1)
-            x_modified[:, p, 3] += (x_modified[:, p, -1] * inserted_lnp1_minuslog10_p_value)
+            x_perturbed[:, position_in_x, 2] += (x[:, position_in_x, -1] * inserted_lnp1_minuslog10_p_value)
+
+    return x_perturbed
+
+
+# Perform in silico epi-mutagenesis
+def ise(window_size, trained_model, x, y, bin_wrt_tss, inserted_peak_width, inserted_lnp1_minuslog10_p_value):
+
+    x_perturbed = perturb_x(x, bin_wrt_tss, inserted_peak_width, inserted_lnp1_minuslog10_p_value)
    
     yPred = trained_model.predict(x[:, :, :-1])[0][0]
-    yPred_perturbed = trained_model.predict(x_modified[:, :, :-1])[0][0]
+    yPred_perturbed = trained_model.predict(x_perturbed[:, :, :-1])[0][0]
+    
+    model_prediction_fold_change = (np.power(10, yPred_perturbed) - 1) / (np.power(10, yPred + EPS) - 1) 
+    
+    return model_prediction_fold_change
+
+
+# Perform in silico epi-mutagenesis when the input is a pair of epigenetic tracks
+def ise_pairwise_input(window_size, trained_model, x, y, bin_wrt_tss, inserted_peak_width, inserted_lnp1_minuslog10_p_value):
+
+    x_perturbed = perturb_x(x, bin_wrt_tss, inserted_peak_width, inserted_lnp1_minuslog10_p_value)   
+    # create the pairwise input
+    half_window_size = (x.shape[1] - 1) // 2
+    operative_half_window_size = (window_size - 1) // 2
+
+    x_pairwise = np.concatenate([x[0, half_window_size - operative_half_window_size:half_window_size + operative_half_window_size + 1, 2], x[0, half_window_size - operative_half_window_size:half_window_size + operative_half_window_size + 1, 4]], axis=0)
+
+    x_perturbed_pairwise = np.concatenate([x_perturbed[0, half_window_size - operative_half_window_size:half_window_size + operative_half_window_size + 1, 2], x_perturbed[0, half_window_size - operative_half_window_size:half_window_size + operative_half_window_size + 1, 4]], axis=0)
+
+    yPred = trained_model.predict(np.expand_dims(x_pairwise, axis=0))
+    yPred_perturbed = trained_model.predict(np.expand_dims(x_perturbed_pairwise, axis=0))
+    
+    # print(x.shape, x_pairwise.shape, 
+    #       x_perturbed.shape, x_perturbed_pairwise.shape,
+    #       yPred.shape, yPred_perturbed.shape)
     
     model_prediction_fold_change = (np.power(10, yPred_perturbed) - 1) / (np.power(10, yPred + EPS) - 1) 
     
@@ -82,8 +155,8 @@ def visualize_fold_change(axis_dict, ise_results):
         sc, sp = spearmanr(yTrue_mean[gene], yPred_mean[gene])
 
         axis_dict[gene].plot(yTrue_mean[gene], yPred_mean[gene], 'o', markersize=30, color="#FF1493")
-        axis_dict[gene].set_xlim(-1, 10)
-        axis_dict[gene].set_ylim(-1, 10)
+        axis_dict[gene].set_xlim(-1, 6)
+        axis_dict[gene].set_ylim(-1, 6)
         axis_dict[gene].tick_params(axis='both', which='major', labelsize=40)
         axis_dict[gene].tick_params(axis='both', which='minor', labelsize=40)
         axis_dict[gene].set_xlabel("CRISPRa qPCR fold change", size=60)
@@ -103,64 +176,20 @@ def visualize_fold_change(axis_dict, ise_results):
     return None
 
 
-if __name__ == '__main__': 
-   
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--run_name')
-    parser.add_argument('--trained_model')
-    parser.add_argument('--window_size', type=int)
-    args = parser.parse_args()
+def perform_ise(fig, axs, 
+                window_size,
+                path_to_dataset, ise_function,
+                peak_width_choices,
+                inserted_lnp1_minuslog10_p_value_choices,
+                xInference, yInference,
+                gene_list, CHROM, TSS, STRAND, 
+                trained_model):
 
-    trained_model = load_model(args.trained_model)
-
-    # Generate data vectors for CXCR4 and TGFBR1
-    cell_type_choice = -1
-
-    CHROM = {'CXCR4':'chr2', 'TGFBR1':'chr9'}
-    TSS = {'CXCR4':136118149, 'TGFBR1':99105113}
-    STRAND = {'CXCR4':'-','TGFBR1':'+'}
-
-    xInference = {}
-    yInference = {}
-
-    gene_list = ["CXCR4", "TGFBR1"]
-    for gene in gene_list:
-        
-        prediction_generator = TranscriptomePredictor(args.window_size,
-                               1,
-                               shuffle=False,
-                               mode='inference',
-                               masking_probability=0.0,
-                               chrom=CHROM[gene], 
-                               start=int(TSS[gene]),
-                               strand=STRAND[gene],
-                               cell_type=cell_type_choice)
-
-        for i in range(1):
-            X, Y = prediction_generator.__getitem__(i)
-            print(X.shape, Y.shape)
-
-            xInference[gene] = X
-            yInference[gene] = Y
-
-            # np.save("../../Data/" + args.run_name + "." + gene + ".CT_" + str(cell_type_choice + 1) + ".npy", X)
-            # np.save("../../Data/" + args.run_name + "." +  gene + ".CT_" + str(cell_type_choice + 1) + ".TPM.npy", Y)
-
-
-    # assay_names = ['H3K36me3', 'H3K27me3', 'H3K27ac',
-    #                'H3K4me1', 'H3K4me3', 'H3K9me3', 'MNase']
-
-    # assay_colors = ['red', 'green', 'blue',
-    #                 'cyan', 'pink', 'brown', 'purple']
+    assay_names = ['H3K36me3', 'H3K27me3', 'H3K27ac', 'H3K4me1', 'H3K4me3', 'H3K9me3', 'MNase']
 
     # Now load CRISPRa data from the Hilton Lab
-    df = pd.read_csv("../../Data/p300_epigenome_editing_dataset.tsv", sep="\t")
-
-    # For each position we have data for, perturb the epigenetic data and compute model predictions
-    peak_width_choices = [6, 8]
-    inserted_lnp1_minuslog10_p_value_choices = [1.5] # corresponds to p-value = 0.0003    
-
-    fig, axs = plt.subplots(len(peak_width_choices) * len(inserted_lnp1_minuslog10_p_value_choices), 2)
+    df = pd.read_csv(path_to_dataset, sep="\t")
+    
     fig.set_size_inches(60, 60)
 
     plot_number = 0
@@ -170,6 +199,12 @@ if __name__ == '__main__':
             axis_dict = {}
             axis_dict['CXCR4'] = axs[plot_number, 0]
             axis_dict['TGFBR1'] = axs[plot_number, 1]
+
+            axs[plot_number, 0].set_xlim(0.8, 6)
+            axs[plot_number, 0].set_ylim(-0.2, 3)
+            axs[plot_number, 1].set_xlim(0.8, 6)
+            axs[plot_number, 1].set_ylim(-0.2, 3)
+
             plot_number += 1
             ise_results = []
 
@@ -188,7 +223,8 @@ if __name__ == '__main__':
 
                 CRISPRa_qPCR_fold_change = df.iloc[index, 6]
 
-                model_prediction_fold_change = ise(trained_model,
+                model_prediction_fold_change = ise_function(window_size,
+                                                   trained_model,
                                                    xInference[gene],
                                                    yInference[gene],
                                                    bin_wrt_tss,
@@ -198,6 +234,37 @@ if __name__ == '__main__':
                 ise_results.append([gene, peak_width, inserted_lnp1_minuslog10_p_value, gRNA_ID, bin_wrt_tss, CRISPRa_qPCR_fold_change, model_prediction_fold_change])
 
             visualize_fold_change(axis_dict, ise_results)
-                
-    fig.savefig("../../Results/" + args.run_name + ".inference.pdf")
 
+    return fig
+
+
+if __name__ == '__main__': 
+   
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--run_name')
+    parser.add_argument('--trained_model')
+    parser.add_argument('--window_size', type=int)
+    args = parser.parse_args()
+
+    trained_model = load_model(args.trained_model)
+
+    # Generate data vectors for CXCR4 and TGFBR1
+    cell_type_choice = -1
+    path_to_save = "../../Data/" + args.run_name
+    xInference, yInference, gene_list, CHROM, TSS, STRAND = generate_data_vectors(cell_type_choice, args.window_size, path_to_save)
+
+    peak_width_choices = [6, 8]
+    inserted_lnp1_minuslog10_p_value_choices = [1.5]  # corresponds to 0.0003
+    fig, axs = plt.subplots(len(peak_width_choices) * len(inserted_lnp1_minuslog10_p_value_choices), 2)
+
+    path_to_dataset = "../../Data/p300_epigenome_editing_dataset.tsv"
+    perform_ise(fig, axs,
+                args.window_size,
+                path_to_dataset, ise,
+                peak_width_choices,
+                inserted_lnp1_minuslog10_p_value_choices,
+                xInference, yInference,
+                gene_list, CHROM, TSS, STRAND,                
+                trained_model)
+
+    fig.savefig("../../Results/" + args.run_name + ".inference.pdf")
