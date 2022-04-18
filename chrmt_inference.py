@@ -126,6 +126,7 @@ def p_value_mapping(inserted_lnp1_minuslog10_p_value):
 # Visualize true vs predicted fold change
 def visualize_fold_change(axis_dict, ise_results):
 
+    spearmans = {}
     yTrue_gRNA = {}
     yPred_gRNA = {}
     gene_list = ['CXCR4', 'TGFBR1']    
@@ -155,6 +156,8 @@ def visualize_fold_change(axis_dict, ise_results):
         pc, pp = pearsonr(yTrue_mean[gene], yPred_mean[gene])
         sc, sp = spearmanr(yTrue_mean[gene], yPred_mean[gene])
 
+        spearmans[gene] = sc
+
         axis_dict[gene].plot(yTrue_mean[gene], yPred_mean[gene], 'o', markersize=30, color="#FF1493")
         axis_dict[gene].set_xlim(-1, 6)
         axis_dict[gene].set_ylim(-1, 6)
@@ -175,7 +178,7 @@ def visualize_fold_change(axis_dict, ise_results):
                                   " ("+str(round(sp, 3))+
                                   ")", size=40)
 
-    return None
+    return spearmans
 
 
 def perform_ise(fig, axs, 
@@ -228,9 +231,9 @@ def perform_ise(fig, axs,
 
                 gRNA_strand = df.iloc[index, 7]
                 if(gRNA_strand == "plus"):
-                    stranded_MNase_offset = MNase_offset * -1
+                    stranded_MNase_offset = MNase_offset * +1 # First: -1 Now: +1
                 elif(gRNA_strand == "minus"):
-                    stranded_MNase_offset = MNase_offset * +1
+                    stranded_MNase_offset = MNase_offset * -1
                 else:
                     print("gRNA strand seems incorrect", file=sys.stderr)
                     stranded_MNase_offset = 0
@@ -246,9 +249,12 @@ def perform_ise(fig, axs,
         
                 ise_results.append([gene, peak_width, inserted_lnp1_minuslog10_p_value, stranded_MNase_offset, gRNA_ID, bin_wrt_tss, CRISPRa_qPCR_fold_change, model_prediction_fold_change])
 
-            visualize_fold_change(axis_dict, ise_results)
+            if(peak_width == 6):
+                spearmans = visualize_fold_change(axis_dict, ise_results)
+            else:
+                visualize_fold_change(axis_dict, ise_results)
 
-    return fig
+    return fig, spearmans
 
 
 if __name__ == '__main__': 
@@ -262,6 +268,10 @@ if __name__ == '__main__':
     trained_model = load_model(args.trained_model, compile=False)
 
     # Generate data vectors for CXCR4 and TGFBR1
+    spearmans = {}
+    spearmans["CXCR4"] = []
+    spearmans["TGFBR1"] = []
+
     cell_type_choice = -1
     path_to_save = "../../Data/" + args.run_name
     xInference, yInference, gene_list, CHROM, TSS, STRAND = generate_data_vectors(cell_type_choice, args.window_size, path_to_save)
@@ -270,13 +280,15 @@ if __name__ == '__main__':
     inserted_lnp1_minuslog10_p_value_choices = [1.5]  # corresponds to 0.0003
 
     with PdfPages("../../Results/" + args.run_name + ".inference.pdf") as pdf:
-
-        for MNase_offset in range(-1, 1 + 1):
+    
+        fig_list = []
+    
+        for MNase_offset in range(-6, 6 + 1):
 
             fig, axs = plt.subplots(len(peak_width_choices) * len(inserted_lnp1_minuslog10_p_value_choices), 2)
 
             path_to_dataset = "../../Data/p300_epigenome_editing_dataset.tsv"
-            perform_ise(fig, axs,
+            _, spearman = perform_ise(fig, axs,
                 args.window_size,
                 path_to_dataset, ise,
                 peak_width_choices,
@@ -286,6 +298,25 @@ if __name__ == '__main__':
                 gene_list, CHROM, TSS, STRAND,                
                 trained_model)
 
+            fig_list.append(fig)
+
+            spearmans["CXCR4"].append((MNase_offset, spearman["CXCR4"]))
+            spearmans["TGFBR1"].append((MNase_offset, spearman["TGFBR1"]))
+  
+        plt.figure(figsize=(40, 40)) 
+        plt.plot([x[0] for x in spearmans["CXCR4"]], [x[1] for x in spearmans["CXCR4"]], 'o-', color="darkgreen", markersize=30, label="CXCR4") 
+        plt.plot([x[0] for x in spearmans["TGFBR1"]], [x[1] for x in spearmans["TGFBR1"]], 'o-', color="darkblue", markersize=30, label="TGFBR1") 
+        plt.tick_params(axis='both', which='both', direction='out', length=6, width=2, colors='black', labelsize=45)
+        plt.xlabel("stranded MNase offset", fontsize=60)
+        plt.ylabel("Spearman", fontsize=60)
+        plt.xlim(-10, 10)
+        plt.ylim(-0.25, 0.75)
+        plt.legend(fontsize=60)
+        plt.title("Spearman vs stranded MNase offset", fontsize=80)
+        pdf.savefig()
+        plt.close()
+
+        for fig in fig_list:
             pdf.savefig(fig)
             plt.close()
 

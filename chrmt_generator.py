@@ -14,20 +14,22 @@ from random import randrange
 import pyranges as pr
 
 
-CELL_TYPES = ["T" + "{0:0=2d}".format(i) for i in range(1, 14)]
+
+ALL_CELL_TYPES = ["T" + "{0:0=2d}".format(i) for i in range(1, 14)]
+
+CELL_TYPES = ["T" + "{0:0=2d}".format(i) for i in range(13, 14)]
 ASSAY_TYPES = ["A" + "{0:0=2d}".format(i) for i in range(2, 8)]
 ACTIVE_ASSAY_TYPES = ["A" + "{0:0=2d}".format(i) for i in range(2, 8)]
 
-training_chroms = ["chr"+str(i) for i in range(17, 18, 1)]
-validation_chroms = ["chr"+str(i) for i in range(18, 23, 1)]
-testing_chroms = ["chr"+str(i) for i in range(18, 23, 1)]
+training_chroms = ["chr"+str(i) for i in range(1, 14, 1)]
+validation_chroms = ["chr"+str(i) for i in range(14, 20, 1)]
+testing_chroms = ["chr"+str(i) for i in range(20, 23, 1)]
 
 # Remove CXCR4 and TGFBR1 chromosomes from training and add them to validation and testing
 if("chr2" in training_chroms):
     training_chroms.remove("chr2")
 if("chr9" in training_chroms):
     training_chroms.remove("chr9")
-validation_chroms = validation_chroms + ["chr2", "chr9"]
 testing_chroms = testing_chroms + ["chr2", "chr9"]
 
 # testing_chroms = training_chroms # TEMPORARY FOR UNDERSTANDING PERFORMANCE METRICS ON TRAINING DATA
@@ -121,16 +123,21 @@ class EpigenomeGenerator(Sequence):
 
         if("training" in self.mode):
             self.chroms = training_chroms
+
         elif("validation" in self.mode):
             self.chroms = validation_chroms
+            
         elif("testing" in self.mode):
             self.chroms = testing_chroms
+
+            global CELL_TYPES
+            CELL_TYPES = ["T" + "{0:0=2d}".format(i) for i in range(1, 14)]
+
         elif("inference" in self.mode):
             self.chroms = inference_chroms
-            global CELL_TYPES
+
             global ASSAY_TYPES
             global ACTIVE_ASSAY_TYPES
-            CELL_TYPES = ["T" + "{0:0=2d}".format(i) for i in range(13, 14)]
             ASSAY_TYPES = ["A" + "{0:0=2d}".format(i) for i in range(2, 8)] + ["A10"]
             ACTIVE_ASSAY_TYPES = ["A" + "{0:0=2d}".format(i) for i in range(2, 8)] + ["A10"]
 
@@ -535,6 +542,9 @@ class TranscriptomeGenerator(EpigenomeGenerator):
                 # TODO: 1 December 2021
                 # We lose ~1k genes because TSSs lie within RESOLUTION
                 # For those, print out exact TSS in addition to binned TSS
+                # RESOLVED: 17 April 2022: This probably no longer occurs because
+                # each TSS is associated with a transcript as well as location
+                # So this is resolved now
                 if(PRINT_FEATURES):
 
                     for assay_index in range(2, 8):

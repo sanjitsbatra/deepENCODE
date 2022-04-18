@@ -6,8 +6,8 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from tqdm import tqdm
 from scipy.stats import spearmanr, pearsonr
-from chrmt_generator import EpigenomeGenerator, TranscriptomeGenerator
-from chrmt_generator import ASSAY_TYPES, CELL_TYPES, MASK_VALUE, EPS
+from chrmt_generator import ASSAY_TYPES, ALL_CELL_TYPES, MASK_VALUE, EPS
+from chrmt_generator import TranscriptomeGenerator
 from tensorflow.keras.callbacks import LearningRateScheduler
 from tensorflow.keras.models import Model
 from tensorflow.keras.layers import BatchNormalization, Activation
@@ -328,7 +328,7 @@ if __name__ == '__main__':
         print("Loss should be mse or mle", file=sys.stderr)
         sys.exit(-1)
 
-    number_of_epochs = 3
+    number_of_epochs = 100
     generate_dataframe = False
 
     genome_wide = int(False)
@@ -515,7 +515,10 @@ if __name__ == '__main__':
     axs[0, 0].plot(epoch_number, validation_loss, 'o-', color="#8470FF", markersize=4, linewidth=3, label="validation_loss")
 
     axs[0, 0].set_xlim(-1, max(epoch_number) + 1)
-    axs[0, 0].set_ylim(0, 0.5)
+    if(loss == "mse"):
+        axs[0, 0].set_ylim(0, 0.5)
+    elif(loss == "mle"):
+        axs[0, 0].set_ylim(-50, 1)
     axs[0, 0].set_xlabel("Number of epochs")
     axs[0, 0].set_ylabel("Loss")
     axs[0, 0].legend(loc="upper center", fontsize=10, ncol=1)
@@ -523,7 +526,7 @@ if __name__ == '__main__':
 
     # We also visualize the correlation across genes within each cell type
     cell_type_spearman = {}
-    for cell_type in tqdm(CELL_TYPES):
+    for cell_type in tqdm(ALL_CELL_TYPES):
         f_predictions = open('../../Logs/' + run_name + '.testing_metrics.tsv', 'r')
         yTrue = []
         yPred = []
@@ -548,7 +551,7 @@ if __name__ == '__main__':
             axs[0, 1].set_ylabel("Predicted log10(TPM+1)")
             axs[0, 1].set_title("HEK293T True vs Predicted gene expression")
 
-    axs[1, 0].bar(CELL_TYPES, [cell_type_spearman[ct] for ct in CELL_TYPES], color=plt.cm.plasma(np.linspace(0.1, 0.9, len(CELL_TYPES))))
+    axs[1, 0].bar(ALL_CELL_TYPES, [cell_type_spearman[ct] for ct in ALL_CELL_TYPES], color=plt.cm.plasma(np.linspace(0.1, 0.9, len(ALL_CELL_TYPES))))
     axs[1, 0].set_title("Correlations across genes for different cell types")
     axs[1, 0].set_ylim(0, 1)
 
