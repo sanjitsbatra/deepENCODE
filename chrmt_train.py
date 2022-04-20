@@ -20,15 +20,16 @@ from tensorflow.keras.layers import Flatten
 from tensorflow.keras.layers import Cropping1D
 from tensorflow.keras.layers import Reshape
 from tensorflow.keras.layers import GlobalAveragePooling1D, AveragePooling1D, UpSampling1D
-from tensorflow.keras.layers import multiply, add, average, subtract
+from tensorflow.keras.layers import multiply, add, average
 from tensorflow.keras import Input, Model
-from keras.models import load_model
+from tensorflow.keras.models import load_model
 # from tensorflow.keras.layers import Flatten, Dense
 # from keras.losses import logcosh
 from tensorflow.keras.optimizers import Adam
-from keras.callbacks import ModelCheckpoint, LearningRateScheduler, CSVLogger
-from keras import backend as K
-import keras
+from tensorflow.keras.callbacks import ModelCheckpoint, LearningRateScheduler, CSVLogger
+from tensorflow.keras import backend as K
+# import keras
+import tensorflow as tf
 from tqdm.keras import TqdmCallback
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
@@ -339,6 +340,15 @@ if __name__ == '__main__':
                 # "_" + str(window_size) + "_" + str(num_layers) +
                 # "_" + str(num_filters))
 
+    # session = K.get_session()
+    # init = tf.global_variables_initializer()
+    # session.run(init)
+    # K.get_session().run(tf.global_variables_initializer())
+    # K.get_session().run(tf.local_variables_initializer())
+    # init_op = tf.global_variables_initializer()
+    # sess = tf.Session()
+    # sess.run(init_op)
+
     # tf.disable_v2_behavior()
     # tf.compat.v1.keras.backend.get_session()
     # tf.compat.v1.enable_eager_execution()
@@ -434,12 +444,11 @@ if __name__ == '__main__':
         assert(False)
 
     model.compile(loss=loss_function,
-                  optimizer='adam',
-                  run_eagerly=False)
+                  optimizer='adam')
 
     print(model.summary())
 
-    model.fit(training_generator,
+    model.fit_generator(training_generator,
                         epochs=number_of_epochs,
                         validation_data=validation_generator,
                         callbacks=[checkpoint, lr_schedule, csv_logger],

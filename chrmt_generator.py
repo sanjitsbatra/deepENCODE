@@ -14,7 +14,6 @@ from random import randrange
 import pyranges as pr
 
 
-
 ALL_CELL_TYPES = ["T" + "{0:0=2d}".format(i) for i in range(1, 14)]
 
 CELL_TYPES = ["T" + "{0:0=2d}".format(i) for i in range(13, 14)]

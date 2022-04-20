@@ -283,7 +283,7 @@ if __name__ == '__main__':
     
         fig_list = []
     
-        for MNase_offset in range(-6, 6 + 1):
+        for MNase_offset in range(-1, 1 + 1):
 
             fig, axs = plt.subplots(len(peak_width_choices) * len(inserted_lnp1_minuslog10_p_value_choices), 2)
 
@@ -320,3 +320,9 @@ if __name__ == '__main__':
             pdf.savefig(fig)
             plt.close()
 
+    # Write out MNase_offset = 0 spearman to a text file
+    f_results = open("../../Results/" + args.run_name + ".inference.txt", 'w')
+    sc_CXCR4 = [x[1] for x in spearmans["CXCR4"] if x[0] == 0]
+    sc_TGFBR1 = [x[1] for x in spearmans["TGFBR1"] if x[0] == 0]    
+    print(args.run_name + "\t" + str(sc_CXCR4[0]) + "\t" + str(sc_TGFBR1[0]), file=f_results)
+    f_results.close()
