@@ -6,7 +6,7 @@ import statsmodels.api as sm
 import warnings
 warnings.filterwarnings('ignore')
 
-Original_Data_Path = "../Data/25bp_Data/"
+Original_Data_Path = "../Data/Original_25bp_Data/"
 Transformed_Data_Path = "../Data/Transformed_25bp_Data/"
 
 Avocado_list = ["T07_A03", "T11_A04", "T12_A07", "T08_A01", "T09_A01",
@@ -168,3 +168,4 @@ if __name__ == '__main__':
                           beta,
                           scale_target,
                           linear_scaling_value_target))
+

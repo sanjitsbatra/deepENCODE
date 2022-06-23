@@ -28,7 +28,7 @@ from tensorflow.keras.models import load_model
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.callbacks import ModelCheckpoint, LearningRateScheduler, CSVLogger
 from tensorflow.keras import backend as K
-# import keras
+import tensorflow.keras as keras
 import tensorflow as tf
 from tqdm.keras import TqdmCallback
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
@@ -36,12 +36,12 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 def lr_scheduler(epoch):
 
-    if epoch < 3:
-        return 2e-3
-    elif epoch < 90:
+    if epoch < 10:
         return 1e-3
-    else:
+    elif epoch < 50:
         return 5e-4
+    else:
+        return 1e-4
 
 
 def clean_up_models(prefix, max_epoch_num):
@@ -190,110 +190,12 @@ def create_transcriptome_linear(window_size,
     # define the model input
     inputs = Input(shape=(window_size, number_of_assays), name='input')
     x = inputs
-    x = BatchNormalization(axis=-1)(x)
+    # x = BatchNormalization(axis=-1)(x)
     x = Flatten()(x)
     x = Dense(number_of_outputs, activation='linear', kernel_regularizer=keras.regularizers.l2(l=0.01))(x)
 
     model = Model(inputs, x)
     return model
-
-
-def bac_unit(num_kernels, kernel_size, **kwargs):
-
-    def f(input_node):
-
-        bn = BatchNormalization()(input_node)
-        act = Activation('relu')(bn)
-        output_node = Conv1D(num_kernels, kernel_size, **kwargs)(act)
-
-        return output_node
-
-    return f
-
-
-def se_unit(num_kernels, ratio):
-
-    def f(input_node):
-
-        se = GlobalAveragePooling1D()(input_node)
-        se = Dense(num_kernels // ratio, activation='relu')(se)
-        se = Dense(num_kernels, activation='sigmoid')(se)
-        output_node = multiply([input_node, se])
-
-        return output_node
-
-    return f
-
-
-def residual_unit(num_kernels, kernel_size, dilation_rate, **kwargs):
-
-    def f(input_node):
-
-        bac1 = bac_unit(num_kernels, kernel_size, dilation_rate=dilation_rate, padding='same', **kwargs)(input_node)
-        drop = Dropout(0.1)(bac1)
-        bac2 = bac_unit(num_kernels, kernel_size, dilation_rate=dilation_rate, padding='same', **kwargs)(drop)
-        drop = Dropout(0.1)(bac2)
-        se = se_unit(num_kernels, 2)(drop)
-
-        output_node = add([input_node, se])
-        
-        return output_node
-
-    return f
-
-
-def wavenet(l, num_kernels, kernel_size_array, dilation_rate_array, in_channels, out_channels):
-
-    input0 = Input(shape=(l, in_channels))
-
-    conv = [[] for _ in range(len(kernel_size_array) + 1)]
-    conv[0] = bac_unit(num_kernels, 1)(input0)
-    for i in range(len(kernel_size_array)):
-        conv[i + 1] = residual_unit(num_kernels, kernel_size_array[i], dilation_rate_array[i],
-                                    kernel_initializer='he_uniform')(conv[i])
-
-    prefinal = bac_unit(out_channels, 1, activation='relu')(conv[-1])
-
-    crop_len = np.sum(((np.asarray(kernel_size_array) - 1) * np.asarray(dilation_rate_array)))
-    output0 = Cropping1D((crop_len, crop_len))(prefinal)
-
-    return Model(inputs=input0, outputs=output0)
-
-
-def return_wavenet_model(model, l, num_kernels, in_channels, out_channels):
-
-    if model == 'wavenet_p128':
-
-        kernel_size_array = [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5]
-        dilation_rate_array = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
-
-        return wavenet(l, num_kernels, kernel_size_array, dilation_rate_array, in_channels, out_channels)
-
-    elif model == 'wavenet_p192':
-
-        kernel_size_array = [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5]
-        dilation_rate_array = [1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2]
-
-        return wavenet(l, num_kernels, kernel_size_array, dilation_rate_array, in_channels, out_channels)
-
-    elif model == 'wavenet_p480':
-
-        kernel_size_array = [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5]
-        dilation_rate_array = [1, 1, 1, 1, 2, 2, 2, 2, 4, 4, 4, 4, 8, 8, 8, 8]
-
-        return wavenet(l, num_kernels, kernel_size_array, dilation_rate_array, in_channels, out_channels)
-
-    elif model == 'wavenet_p752':
-
-        kernel_size_array = [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5]
-        dilation_rate_array = [1, 1, 2, 2, 4, 4, 8, 8, 16, 16, 16, 16]
-
-        return wavenet(l, num_kernels, kernel_size_array, dilation_rate_array, in_channels, out_channels)
-
-    else:
-
-        print("Model provided is incorrect...exiting", model, file=sys.stderr)
-        os._exit(-1)
 
 
 if __name__ == '__main__':
@@ -303,6 +205,7 @@ if __name__ == '__main__':
     parser.add_argument('--framework')
     parser.add_argument('--loss')
     parser.add_argument('--model')
+    parser.add_argument('--cell_type_index', type=int)
     parser.add_argument('--mle_lambda', type=float)
     parser.add_argument('--window_size', type=int)
     parser.add_argument('--num_layers', type=int)
@@ -318,7 +221,7 @@ if __name__ == '__main__':
     num_layers = args.num_layers
     num_filters = args.num_filters
 
-    batch_size = 64
+    batch_size = 256
     conv_kernel_size = 5
     masking_prob = 0.0
     padding = 'same'
@@ -329,7 +232,7 @@ if __name__ == '__main__':
         print("Loss should be mse or mle", file=sys.stderr)
         sys.exit(-1)
 
-    number_of_epochs = 100
+    number_of_epochs = 50
     generate_dataframe = False
 
     genome_wide = int(False)
@@ -389,19 +292,22 @@ if __name__ == '__main__':
                                        batch_size,
                                        shuffle=True,
                                        mode="training",
-                                       masking_probability=masking_prob)
+                                       masking_probability=masking_prob,
+                                       cell_type_index=args.cell_type_index)
 
     validation_generator = DataGenerator(window_size,
                                          batch_size,
                                          shuffle=False,
                                          mode="validation",
-                                         masking_probability=masking_prob)
+                                         masking_probability=masking_prob,
+                                         cell_type_index=args.cell_type_index)
 
     testing_generator = DataGenerator(window_size,
                                       batch_size,
                                       shuffle=False,
                                       mode="testing",
-                                      masking_probability=masking_prob)
+                                      masking_probability=masking_prob,
+                                      cell_type_index=args.cell_type_index)
 
     tqdm_keras = TqdmCallback(verbose=0)
     setattr(tqdm_keras, 'on_train_batch_begin', lambda x, y: None)
@@ -436,11 +342,8 @@ if __name__ == '__main__':
                                             num_filters,
                                             conv_kernel_size,
                                             number_of_outputs)
-    elif(model_type == "wavenet"):
-        assert(loss == "mse")
-        model = return_wavenet_model("wavenet_p192", window_size, num_filters, len(ASSAY_TYPES), number_of_outputs)
     else:
-        print("Model type must be one of maxpool, linear or wavenet", file=sys.stderr)
+        print("Model type must be one of maxpool or linear", file=sys.stderr)
         assert(False)
 
     model.compile(loss=loss_function,
@@ -466,17 +369,31 @@ if __name__ == '__main__':
     # the second is the correlation across cell types, for each gene
     # these two metrics then need to be summarized as figures, for each model
     trained_model = load_model('../../Models/' + run_name + '.hdf5', compile=False)
+    print("Finished loading trained model")   
 
-    testing_generator_len = len(list(testing_generator))
+    testing_generator_len = testing_generator.__len__()
     
     True_Expression = np.zeros((batch_size * testing_generator_len, 1))
     Predicted_Expression = np.zeros((batch_size * testing_generator_len, 1))
     metadata_list = []
 
+    print("Begun scoring test data")
     for test_i in range(testing_generator_len):
 
         x, yTrue, metadata = testing_generator.__getitem__(test_i)
         True_Expression[test_i * batch_size:(test_i + 1) * batch_size] = yTrue
+
+        print("Shape of test data is: ", x.shape)
+        # batch_size, window_size, NUM_ASSAYS
+    
+        '''    
+        # Zero-out all assays except H3K27ac
+        x[:, :, 0] = 0
+        x[:, :, 1] = 0
+        x[:, :, 3] = 0
+        x[:, :, 4] = 0
+        x[:, :, 5] = 0
+        '''
 
         if(loss == 'mse'):
             yPred = trained_model.predict(x)
@@ -488,6 +405,7 @@ if __name__ == '__main__':
                              (test_i + 1) * batch_size] = yPred
         metadata_list.append(metadata)
     metadata_list = np.reshape(np.asarray(metadata_list), (-1, 5))
+    print("Finished scoring testing data")
 
     f_output = open('../../Logs/' + run_name + '.testing_metrics.tsv', 'w')
     for i in range(True_Expression.shape[0]):
@@ -518,7 +436,7 @@ if __name__ == '__main__':
         vec = line.rstrip("\n").split(",")
         epoch_number.append(int(vec[0]))
         training_loss.append(float(vec[1]))
-        validation_loss.append(float(vec[3]))
+        validation_loss.append(float(vec[2])) # lr has been removed in gpu_env tf keras
 
     axs[0, 0].plot(epoch_number, training_loss, 'o-', color="#4daf4a", markersize=4, linewidth=3, label="training_loss")
     axs[0, 0].plot(epoch_number, validation_loss, 'o-', color="#8470FF", markersize=4, linewidth=3, label="validation_loss")

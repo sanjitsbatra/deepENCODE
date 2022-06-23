@@ -54,8 +54,8 @@ def generate_data_vectors(cell_type_choice, window_size, path_to_save):
             xInference[gene] = X
             yInference[gene] = Y
 
-            # np.save(path_to_save + "." + gene + ".CT_" + str(cell_type_choice) + ".npy", X)
-            # np.save(path_to_save + "." +  gene + ".CT_" + str(cell_type_choice) + ".TPM.npy", Y)
+            np.save(path_to_save + "." + gene + ".CT_" + str(cell_type_choice) + ".npy", X)
+            np.save(path_to_save + "." +  gene + ".CT_" + str(cell_type_choice) + ".TPM.npy", Y)
 
     return xInference, yInference, gene_list, CHROM, TSS, STRAND
 

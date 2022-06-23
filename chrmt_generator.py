@@ -16,24 +16,26 @@ import pyranges as pr
 
 ALL_CELL_TYPES = ["T" + "{0:0=2d}".format(i) for i in range(1, 14)]
 
-CELL_TYPES = ["T" + "{0:0=2d}".format(i) for i in range(13, 14)]
+CELL_TYPES = ["T" + "{0:0=2d}".format(i) for i in range(1, 14)]
 ASSAY_TYPES = ["A" + "{0:0=2d}".format(i) for i in range(2, 8)]
 ACTIVE_ASSAY_TYPES = ["A" + "{0:0=2d}".format(i) for i in range(2, 8)]
 
 training_chroms = ["chr"+str(i) for i in range(1, 14, 1)]
-validation_chroms = ["chr"+str(i) for i in range(14, 20, 1)]
-testing_chroms = ["chr"+str(i) for i in range(20, 23, 1)]
+validation_chroms = ["chr"+str(i) for i in range(14, 23, 2)]
+testing_chroms = ["chr"+str(i) for i in range(15, 23, 2)]
 
 # Remove CXCR4 and TGFBR1 chromosomes from training and add them to validation and testing
+'''
 if("chr2" in training_chroms):
     training_chroms.remove("chr2")
 if("chr9" in training_chroms):
     training_chroms.remove("chr9")
 testing_chroms = testing_chroms + ["chr2", "chr9"]
+'''
 
 # testing_chroms = training_chroms # TEMPORARY FOR UNDERSTANDING PERFORMANCE METRICS ON TRAINING DATA
 
-inference_chroms = ["chr"+str(i) for i in [2, 9]]
+inference_chroms = ["chr"+str(i) for i in [6]] # 2, 9
 
 DEBUG = False
 PRINT_FEATURES = False
@@ -107,13 +109,15 @@ def create_masked(y, p):
 class EpigenomeGenerator(Sequence):
 
     def __init__(self, window_size, batch_size,
-                 shuffle=True, mode='', masking_probability=0.0):
+                 shuffle=True, mode='', masking_probability=0.0, special_cell_type=None, chrom=None):
 
         self.window_size = window_size
         self.batch_size = batch_size
         self.shuffle = shuffle
         self.mode = mode
         self.masking_probability = masking_probability
+
+        self.special_cell_type = special_cell_type
 
         self.epigenome = {}
         self.chrom_lens = {}
@@ -125,15 +129,12 @@ class EpigenomeGenerator(Sequence):
 
         elif("validation" in self.mode):
             self.chroms = validation_chroms
-            
+
         elif("testing" in self.mode):
             self.chroms = testing_chroms
 
-            global CELL_TYPES
-            CELL_TYPES = ["T" + "{0:0=2d}".format(i) for i in range(1, 14)]
-
         elif("inference" in self.mode):
-            self.chroms = inference_chroms
+            self.chroms = [chrom] # inference_chroms
 
             global ASSAY_TYPES
             global ACTIVE_ASSAY_TYPES
@@ -162,26 +163,39 @@ class EpigenomeGenerator(Sequence):
             if(chrom not in self.chroms):
                 continue
 
-            if(TSS_strand == "+"):
-                for cell_type in CELL_TYPES: 
-                    self.TSS.append([chrom, vec[1], "+", cell_type, transcript])
-            elif(TSS_strand == "-"):
-                for cell_type in CELL_TYPES:
-                    self.TSS.append([chrom, vec[2], "-", cell_type, transcript])
-            else:
-                if(line_number > 1):
-                    print("TSS strand information is invalid",
-                          file=sys.stderr)
-                else:
-                    print("Parsing TSS file header",
-                          file=sys.stderr)
-                continue
+            for cell_type in CELL_TYPES:
+        
+                '''
+                # This block of code is only for cross-cell_type generalization
+                ###############################################################        
+                if(cell_type == self.special_cell_type):
+                    if( ("training" in self.mode) or
+                        ("validation" in self.mode) ):
+                        continue
+                ###############################################################        
+                '''        
 
+                if(TSS_strand == "+"):
+                    self.TSS.append([chrom, vec[1], "+", cell_type, transcript])
+                elif(TSS_strand == "-"):
+                    self.TSS.append([chrom, vec[2], "-", cell_type, transcript])
+                else:
+                    if(line_number > 1):
+                        print("TSS strand information in invalid",
+                              file=sys.stderr)
+                    else:
+                        print("Parsing TSS file header",
+                              file=sys.stderr)
+                    continue
 
         for chrom in self.chroms:
             for cell_type in CELL_TYPES:
+
                 epigenome = []
                 for assay_type in ASSAY_TYPES:
+
+                    print(cell_type, assay_type, chrom, file=sys.stderr)
+
                     f_name = cell_type+""+assay_type+"."+chrom+".npy"
                     f_name = DATA_FOLDER+"/"+f_name
                     if(isfile(f_name)):
@@ -344,7 +358,8 @@ class EpigenomeGenerator(Sequence):
 class TranscriptomeGenerator(EpigenomeGenerator):
 
     def __init__(self, window_size, batch_size,
-                 shuffle=True, mode='', masking_probability=0.0):
+                 shuffle=True, mode='', masking_probability=0.0,
+                 cell_type_index=None, chrom=None):
 
         self.window_size = window_size
         self.batch_size = batch_size
@@ -352,12 +367,20 @@ class TranscriptomeGenerator(EpigenomeGenerator):
         self.mode = mode
         self.masking_probability = masking_probability
 
+        self.special_cell_type = CELL_TYPES[cell_type_index]
+        self.chrom = chrom
+
+        self.log10p1_tpm_lower_bound = -1000000 
+        self.log10p1_tpm_upper_bound = +1000000
+
         EpigenomeGenerator.__init__(self,
                                     self.window_size,
                                     self.batch_size,
                                     self.shuffle,
                                     self.mode,
-                                    self.masking_probability)
+                                    self.masking_probability,
+                                    self.special_cell_type,
+                                    self.chrom)
         
         self.idxs = np.arange(len(self.TSS))
     
@@ -572,6 +595,12 @@ class TranscriptomeGenerator(EpigenomeGenerator):
                         print(output_string, y, cell_type, chrom, start,
                               strand, assay_index, sep=',', file=f_output)
 
+                # Train on only a certain range of TPM 
+                if( ("training" in self.mode) or ("validation" in self.mode) ):
+                    if(not( (y >= self.log10p1_tpm_lower_bound) and (y < self.log10p1_tpm_upper_bound) )):
+                        continue
+                
+
                 X[number_of_data_points, :, :] = x
                 Y[number_of_data_points, :] = y
 
@@ -590,7 +619,7 @@ class TranscriptomePredictor(EpigenomeGenerator):
     def __init__(self, window_size, batch_size,
                  shuffle=False, mode='inference', masking_probability=0.,
                  chrom="chr1", start=1, strand="+",
-                 cell_type=-1):
+                 cell_type_index=-1):
 
         self.window_size = window_size
         self.batch_size = batch_size
@@ -600,11 +629,11 @@ class TranscriptomePredictor(EpigenomeGenerator):
         self.chrom = chrom
         self.start = start // RESOLUTION
         self.strand = strand
-        self.cell_type = cell_type
+        self.special_cell_type = CELL_TYPES[cell_type_index]
 
         EpigenomeGenerator.__init__(self, self.window_size, self.batch_size,
                                     self.shuffle, self.mode,
-                                    self.masking_probability)
+                                    self.masking_probability, self.special_cell_type, self.chrom)
 
     def __getitem__(self, batch_number):
 
@@ -616,11 +645,8 @@ class TranscriptomePredictor(EpigenomeGenerator):
                 print("Batch Number", batch_number, i, self.chrom, self.start,
                       self.strand, file=sys.stderr)
 
-            cell_type_index = self.cell_type
-            cell_type = CELL_TYPES[cell_type_index]
-
             x = (self.epigenome[self.chrom]
-                               [cell_type]
+                               [self.special_cell_type]
                                [:,
                                 i - (self.window_size // 2):
                                 i + (self.window_size // 2) + 1])
@@ -628,12 +654,12 @@ class TranscriptomePredictor(EpigenomeGenerator):
 
             if(self.strand == "+"):
                 y = (self.transcriptome_pos[self.chrom]
-                                           [cell_type]
+                                           [self.special_cell_type]
                                            [i])
             else:
                 x = x[::-1, :]
                 y = (self.transcriptome_neg[self.chrom]
-                                           [cell_type]
+                                           [self.special_cell_type]
                                            [i])
 
             X[i-self.start, :, :] = x
