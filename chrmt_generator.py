@@ -24,6 +24,11 @@ training_chroms = ["chr"+str(i) for i in range(1, 14, 1)]
 validation_chroms = ["chr"+str(i) for i in range(14, 23, 2)]
 testing_chroms = ["chr"+str(i) for i in range(15, 23, 2)]
 
+# Add stochasticity to chromosome choices as per Yun's suggestion 22/6/22
+training_chroms = np.random.choice(training_chroms, 10, replace=False)
+validation_chroms = np.random.choice(validation_chroms, 3, replace=False)
+testing_chroms = np.random.choice(testing_chroms, 4, replace=False)
+
 # Remove CXCR4 and TGFBR1 chromosomes from training and add them to validation and testing
 '''
 if("chr2" in training_chroms):
@@ -35,7 +40,7 @@ testing_chroms = testing_chroms + ["chr2", "chr9"]
 
 # testing_chroms = training_chroms # TEMPORARY FOR UNDERSTANDING PERFORMANCE METRICS ON TRAINING DATA
 
-inference_chroms = ["chr"+str(i) for i in [6]] # 2, 9
+inference_chroms = ["chr"+str(i) for i in [2, 9]]
 
 DEBUG = False
 PRINT_FEATURES = False
@@ -167,6 +172,7 @@ class EpigenomeGenerator(Sequence):
         
                 '''
                 # This block of code is only for cross-cell_type generalization
+                # where we would train on all but the special cell types
                 ###############################################################        
                 if(cell_type == self.special_cell_type):
                     if( ("training" in self.mode) or
@@ -599,7 +605,9 @@ class TranscriptomeGenerator(EpigenomeGenerator):
                 if( ("training" in self.mode) or ("validation" in self.mode) ):
                     if(not( (y >= self.log10p1_tpm_lower_bound) and (y < self.log10p1_tpm_upper_bound) )):
                         continue
-                
+        
+                # For the purpose of CRISPRability, we zero out all other tracks
+                # x[:, np.r_[0,1,3,4,5]] = 0    
 
                 X[number_of_data_points, :, :] = x
                 Y[number_of_data_points, :] = y
