@@ -61,7 +61,7 @@ def generate_data_vectors(cell_type_choice, window_size, path_to_save):
     return xInference, yInference, gene_list, CHROM, TSS, STRAND
 
 
-def perturb_x(x, bin_wrt_tss, inserted_peak_width, inserted_scalar, stranded_MNase_offset, maximum_inserted_minuslog10_p_value=1000, gaussian_bandwidth=None, nucleosome_lambda=None, min_MNase=None, max_MNase=None, H3K27me3_flag=False, dCas9_binding_flag=False, MNase_scaling_flag=False, maximum_flag=False):
+def perturb_x(x, bin_wrt_tss, inserted_peak_width, inserted_scalar, stranded_MNase_offset, maximum_inserted_minuslog10_p_value=1000, gaussian_bandwidth=None, nucleosome_lambda=None, min_MNase=0.0, max_MNase=1.0, H3K27me3_flag="False", dCas9_binding_flag="False", MNase_scaling_flag="False", maximum_flag="False", perturbed_assay_index=2):
 
     # Here the shape of x would be 1 x window_size x NUMBER_OF_ASSAYS + 1 (for the MNase)
     half_window_size = (x.shape[1] - 1) // 2
@@ -69,7 +69,7 @@ def perturb_x(x, bin_wrt_tss, inserted_peak_width, inserted_scalar, stranded_MNa
     x_perturbed = np.copy(x)
 
     H3K27me3_minus_log10_p_value = np.expm1(x[0, :, 1])
-    H3K27ac_minus_log10_p_value = np.expm1(x[0, :, 2])
+    perturbed_assay_minus_log10_p_value = np.expm1(x[0, :, perturbed_assay_index])
 
     MNase_coverage = np.expm1(x[0, :, -1])
     MNase_coverage = [((x - min_MNase) / (max_MNase - min_MNase)) for x in MNase_coverage]
@@ -92,7 +92,7 @@ def perturb_x(x, bin_wrt_tss, inserted_peak_width, inserted_scalar, stranded_MNa
 
             # Modify the H3K27ac peak NOTE: this is ln( -log10(transformed p-value) + 1)
 
-            if(H3K27me3_flag == True):            
+            if(H3K27me3_flag == "True"):            
                 # Step - 1: Take into account existing H3K27me3
                 # this is because you can't add H3K27ac to an already methylated K27
                 H3K27me3_minus_log10_p_value = np.expm1(x[:, position_in_x, 1])
@@ -103,25 +103,25 @@ def perturb_x(x, bin_wrt_tss, inserted_peak_width, inserted_scalar, stranded_MNa
                 else:
                     perturbation_factor *= (2.0 - H3K27me3_minus_log10_p_value)
 
-            if(dCas9_binding_flag == True):
+            if(dCas9_binding_flag == "True"):
                 # Step - 2: Take into account how much MNase exists at the gRNA target
                 # this is because dCas9 can't bind at the nucleosome dyad but can to its shoulder
                 gRNA_bin_position = bin_wrt_tss + half_window_size + stranded_MNase_offset
 
                 perturbation_factor *= np.exp(-1.0 * nucleosome_lambda * MNase_coverage[gRNA_bin_position])
 
-            if(MNase_scaling_flag == True):
+            if(MNase_scaling_flag == "True"):
                 # Step - 3: Scale how much H3K27ac is added, by the amount of MNase
                 # this is because you can only add H3K27ac if there is a nucleosome present
                 perturbation_factor *= MNase_coverage[position_in_x]
 
-            if(maximum_flag is not True):
+            if(maximum_flag != "True"):
                 # Step - 4: You can't add more H3K27ac than an upper limit
                 maximum_inserted_minuslog10_p_value = 100000
 
-            H3K27ac_minus_log10_p_value[position_in_x] += min(maximum_inserted_minuslog10_p_value, perturbation_factor)
+            perturbed_assay_minus_log10_p_value[position_in_x] += min(maximum_inserted_minuslog10_p_value, perturbation_factor)
 
-        x_perturbed[:, :, 2] = np.log1p(H3K27ac_minus_log10_p_value)
+        x_perturbed[:, :, perturbed_assay_index] = np.log1p(perturbed_assay_minus_log10_p_value)
 
     return x_perturbed
 

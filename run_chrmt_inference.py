@@ -35,13 +35,15 @@ if __name__ == '__main__':
     parser.add_argument('--gaussian_bandwidth')
     parser.add_argument('--nucleosome_lambda')
     parser.add_argument('--output_prefix')
-    parser.add_argument('--H3K27me3_flag', type=bool)
-    parser.add_argument('--dCas9_binding_flag', type=bool)
-    parser.add_argument('--MNase_scaling_flag', type=bool)
-    parser.add_argument('--maximum_flag', type=bool)
+    parser.add_argument('--H3K27me3_flag')
+    parser.add_argument('--dCas9_binding_flag')
+    parser.add_argument('--MNase_scaling_flag')
+    parser.add_argument('--maximum_flag')
     args = parser.parse_args()
 
     output_file_name = "../../Logs/" + args.output_prefix + "_" + args.inserted_scalar + "_" + args.maximum_inserted_minuslog10_p_value + "_" + args.gaussian_bandwidth + "_" + args.nucleosome_lambda + "_" + str(args.H3K27me3_flag) + "_" + str(args.dCas9_binding_flag) + "_" + str(args.MNase_scaling_flag) + "_" + str(args.maximum_flag) + ".csv"
+
+    print("Output_file_name is", output_file_name, str(args.maximum_flag), args.maximum_flag)
 
     # First read Alan's data from the Google spreadsheet
     sheet_name = "p300_Alan_Cabrera_epigenome_editing_dataset"
@@ -62,7 +64,7 @@ if __name__ == '__main__':
                 measured_fold_change = float(df_p300.iloc[i, 6])
                 
                 # Only consider bins within +-250bp of the TSS ########################################## CAREFUL
-                if(abs(gRNA_bin_wrt_tss) > 10):
+                if(abs(gRNA_bin_wrt_tss) > 40):
                     continue
                 
                 if((transcript, gRNA_ID, gRNA_bin_wrt_tss) in p300_dict[gene]):
@@ -115,14 +117,14 @@ if __name__ == '__main__':
         inserted_scalar = float(args.inserted_scalar) 
         maximum_inserted_minuslog10_p_value = float(args.maximum_inserted_minuslog10_p_value)
 
-        inserted_peak_width = 10
+        inserted_peak_width = 6
         gaussian_bandwidth = float(args.gaussian_bandwidth)
 
         nucleosome_lambda = float(args.nucleosome_lambda)
 
         stranded_MNase_offset = 0
 
-        ise_radius = 10
+        ise_radius = 81
         bin_wrt_tss_choices = list(range(-ise_radius, ise_radius)) # region where we perform ISE
 
         epigenetic_features = np.load("../../Data/saved_npy_arrays/." + transcript + ".CT_"+str(-1)+".npy")
@@ -131,16 +133,16 @@ if __name__ == '__main__':
         min_MNase = MNase_dict[gene][0]
         max_MNase = MNase_dict[gene][1]
 
-        for model_type in ["maxpool"]:
+        for model_type in ["linear", "maxpool"]:
 
-            for context_size in [401]: #81, 161, 241, 321, 401]:
+            for context_size in [401]: # 81, 161, 241, 321, 401]:
                 half_window = context_size // 2
 
                 num_layers = num_layers_dict[context_size]
 
                 fold_change_dict = {}
 
-                for replicate in tqdm(range(1, 101)):
+                for replicate in tqdm(range(7, 101, 10)):
 
                     K.clear_session() # 2022 and what an insane bug in Keras! Time to switch to PyTorch
                     trained_model = load_model("../../Models/manuscript.R13.stochastic_chromosomes.replicate_"+str(replicate)+"_0_transcriptome_"+str(context_size)+"_"+str(num_layers)+"_32_"+str(model_type)+"_mse_1_-1.hdf5", compile=False)    
@@ -172,35 +174,35 @@ if __name__ == '__main__':
                 mean_fold_change_list = np.mean(fold_change_dict[key], axis=0)
                 stdev_fold_change_list = np.std(fold_change_dict[key], axis=0)
 
-            ise_mean_fold_change_dict[(transcript, model_type_rename_dict[model_type], context_size, key)] = mean_fold_change_list
-            ise_stdev_fold_change_dict[(transcript, model_type_rename_dict[model_type], context_size, key)] = stdev_fold_change_list
+                ise_mean_fold_change_dict[(transcript, model_type_rename_dict[model_type], context_size, key)] = mean_fold_change_list
+                ise_stdev_fold_change_dict[(transcript, model_type_rename_dict[model_type], context_size, key)] = stdev_fold_change_list
 
-            # Now we compare the model predictions w.r.t Alan's data
-            scatter_dict = {}                
-            scatter_dict[gene] = {}
-            scatter_dict[gene][(model_type_rename_dict[model_type], context_size)] = []
+                # Now we compare the model predictions w.r.t Alan's data
+                scatter_dict = {}                
+                scatter_dict[gene] = {}
+                scatter_dict[gene][(model_type_rename_dict[model_type], context_size)] = []
 
-            for (transcript, gRNA, pos) in p300_dict[gene].keys():
+                for (transcript, gRNA, pos) in p300_dict[gene].keys():
 
-                # If the gRNA_bin_wrt_TSS which is named pos, is not within the ise_radius, then ignore
-                if(abs(pos) > ise_radius):
-                    print(ise_radius, pos, file=sys.stderr)
-                    continue
+                    # If the gRNA_bin_wrt_TSS which is named pos, is not within the ise_radius, then ignore
+                    if(abs(pos) > ise_radius):
+                        print(ise_radius, pos, file=sys.stderr)
+                        continue
 
-                fold_change_list = p300_dict[gene][(transcript, gRNA, pos)]
-                mean_fold_change = np.mean(fold_change_list)
-                stdev_fold_change = np.std(fold_change_list)
+                    fold_change_list = p300_dict[gene][(transcript, gRNA, pos)]
+                    mean_fold_change = np.mean(fold_change_list)
+                    stdev_fold_change = np.std(fold_change_list)
 
-                scatter_dict[gene][(model_type_rename_dict[model_type], context_size)].append((mean_fold_change, ise_mean_fold_change_dict[(transcript, model_type_rename_dict[model_type], context_size, key)][ise_radius + pos]))
+                    scatter_dict[gene][(model_type_rename_dict[model_type], context_size)].append((mean_fold_change, ise_mean_fold_change_dict[(transcript, model_type_rename_dict[model_type], context_size, key)][ise_radius + pos]))
 
-            # mean_predictions = ise_mean_fold_change_dict[(transcript, model_type_rename_dict[model_type], context_size, key)]
-            # stdev_predictions = ise_stdev_fold_change_dict[(transcript, model_type_rename_dict[model_type], context_size, key)]
+                # mean_predictions = ise_mean_fold_change_dict[(transcript, model_type_rename_dict[model_type], context_size, key)]
+                # stdev_predictions = ise_stdev_fold_change_dict[(transcript, model_type_rename_dict[model_type], context_size, key)]
 
-            scatter_x = [x[0] for x in scatter_dict[gene][(model_type_rename_dict[model_type], context_size)]]
-            scatter_y = [x[1] for x in scatter_dict[gene][(model_type_rename_dict[model_type], context_size)]]
+                scatter_x = [x[0] for x in scatter_dict[gene][(model_type_rename_dict[model_type], context_size)]]
+                scatter_y = [x[1] for x in scatter_dict[gene][(model_type_rename_dict[model_type], context_size)]]
 
-            sc, sp = spearmanr(scatter_x, scatter_y)
-            results_list.append([transcript, gene, model_type_rename_dict[model_type], context_size, round(key[0], 4), round(key[1], 4), round(key[2], 4), round(key[3], 4), round(sc, 3), round(sp, 3)])
+                sc, sp = spearmanr(scatter_x, scatter_y)
+                results_list.append([transcript, gene, model_type_rename_dict[model_type], context_size, round(key[0], 4), round(key[1], 4), round(key[2], 4), round(key[3], 4), round(sc, 3), round(sp, 3)])
 
     with open(output_file_name, 'w') as f_output:
         for result in results_list:
